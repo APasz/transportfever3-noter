@@ -1,5 +1,4 @@
-Noter
-=====
+# Noter
 
 A per-save to-do notebook for Transport Fever 3.
 
@@ -37,11 +36,20 @@ to the mod's GUI save data. Save the game to keep them across sessions.
 Unsubmitted text is a draft. Each save has its own notebook; loading an older
 save restores that save's notes. Removing the mod may discard its data.
 
-Development
------------
+## Development
 
-Run: python tools/check.py
-For another installation: python tools/check.py --game-dir /path/to/game
+```sh
+./tools/validate.sh
+./tools/validate.sh /path/to/game
+```
+
+The validator also accepts `TF3_GAME_DIR`, as in Vehicle Readout.
+`TPF3_INSTALL_DIR` and `python tools/check.py --game-dir /path/to/game`
+remain available.
+
+Typed Teal sources live in `content/`, as in Vehicle Readout, and run
+directly in the game. `tlconfig.lua` configures optional generated output
+under `build/`.
 
 Checks use the game's bundled Teal compiler, validate against the installed
 API definitions, and run notebook and UI interaction tests under Lua 5.3.
@@ -54,6 +62,8 @@ as entered. Mod-list metadata is translated in _metadata/modinfo.json;
 description.html is a shared English description and overrides that text.
 Restart the game after changing translation catalogues. Checks validate all
 keys, placeholders and metadata, and exercise the UI in every language.
+When using a staging folder with individual symlinks, link strings.json at
+its root alongside content, mod.json and _metadata so the game can load it.
 
 Logging uses the shared _logging package through relative symlinks, as in
 the other mods in _modding. logger.tl provides one shared [Noter] logger.

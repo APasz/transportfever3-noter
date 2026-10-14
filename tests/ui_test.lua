@@ -170,8 +170,8 @@ local environment = setmetatable({
 			["::/gui/main/builtin.lua"] = builtins,
 			["::/gui/main/react.lua"] = react,
 			["::/gui/main/game_react_globals.tl"] = globals,
-			["/noter/model.tl"] = model,
-			["/noter/logger.tl"] = runtime.logger,
+			["apasz_noter::/noter/model.tl"] = model,
+			["apasz_noter::/noter/logger.tl"] = runtime.logger,
 			["::/scripts/lang_util.tl"] = langUtil,
 			["::/gui/main/main_mod_button_area.tl"] = {MainModButtonAreaExtension = {}},
 		}

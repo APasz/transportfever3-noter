@@ -50,7 +50,7 @@ end
 check("all_def.tl")
 local moduleCode = {}
 for _, name in ipairs({"logging_config", "logger", "model"}) do
-	moduleCode["/noter/" .. name .. ".tl"] = check("content/noter/" .. name .. ".tl")
+	moduleCode["apasz_noter::/noter/" .. name .. ".tl"] = check("content/noter/" .. name .. ".tl")
 end
 local uiCode = check("content/noter/ui.script.tl")
 
@@ -66,8 +66,8 @@ local function newRuntime(debugOverride)
 		warning = capture("warning"), error = capture("error"),
 	}}, {__index = _G})
 	local modules = {}
-	modules["/noter/logging.lua"] = assert(loadfile(modRoot .. "/content/noter/logging.lua", "t", runtimeEnvironment))()
-	if debugOverride ~= nil then modules["/noter/logging_config.tl"] = debugOverride end
+	modules["apasz_noter::/noter/logging.lua"] = assert(loadfile(modRoot .. "/content/noter/logging.lua", "t", runtimeEnvironment))()
+	if debugOverride ~= nil then modules["apasz_noter::/noter/logging_config.tl"] = debugOverride end
 	runtimeEnvironment.ug_require = function(path)
 		if modules[path] == nil then
 			local code = assert(moduleCode[path], "Unexpected runtime dependency: " .. path)
@@ -76,9 +76,9 @@ local function newRuntime(debugOverride)
 		return modules[path]
 	end
 	return {
-		model = runtimeEnvironment.ug_require("/noter/model.tl"),
-		logger = runtimeEnvironment.ug_require("/noter/logger.tl"),
-		debugLoggingEnabled = runtimeEnvironment.ug_require("/noter/logging_config.tl"),
+		model = runtimeEnvironment.ug_require("apasz_noter::/noter/model.tl"),
+		logger = runtimeEnvironment.ug_require("apasz_noter::/noter/logger.tl"),
+		debugLoggingEnabled = runtimeEnvironment.ug_require("apasz_noter::/noter/logging_config.tl"),
 		entries = entries,
 		translations = translations,
 	}

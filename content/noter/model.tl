@@ -1,4 +1,4 @@
-local logger = ug_require "/noter/logger.tl" as ModLogging.Logger
+local logger = ug_require "apasz_noter::/noter/logger.tl" as ModLogging.Logger
 local model : NoterModel = {}
 local FORMAT_VERSION = 1
 

@@ -8,8 +8,8 @@
     "description": "Per-save tasks with editing, completion, ordering and map pins. Open Noter from the mod toolbar. Save the game to keep notes; removing the mod may discard them.",
     "name": "Noter",
     "summary": "Per-save to-do notes with map pins.",
-    "url": "",
-    "url_repo": "",
+    "url": "https://mod.io/g/transportfever3/m/noter",
+    "url_repo": "https://github.com/APasz/transportfever3-noter",
     "localization": {
         "de": {
             "name": "Noter",
@@ -71,5 +71,10 @@
             "summary": "每個存檔獨立的待辦筆記，支援地圖位置標記。",
             "description": "每個存檔都有獨立的任務，支援編輯、完成標記、排序和關聯地圖位置。從模組工具列開啟 Noter。儲存遊戲以保留筆記；移除模組可能導致筆記遺失。"
         }
-    }
+    },
+    "tags": [
+        "UI",
+        "Misc",
+        "Script Mod"
+    ]
 }

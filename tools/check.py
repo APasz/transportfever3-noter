@@ -17,10 +17,11 @@ def main() -> None:
     parser.add_argument(
         "--game-dir",
         type=Path,
-        default=Path(os.environ.get(
-            "TPF3_INSTALL_DIR",
-            "/home/apasz/.steam/steam/steamapps/common/Transport Fever 3",
-        )),
+        default=Path(
+            os.environ.get("TF3_GAME_DIR")
+            or os.environ.get("TPF3_INSTALL_DIR")
+            or "/home/apasz/.local/share/Steam/steamapps/common/Transport Fever 3"
+        ),
     )
     args = parser.parse_args()
     mod_root = Path(__file__).resolve().parents[1]

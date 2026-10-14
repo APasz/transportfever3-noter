@@ -2,8 +2,8 @@ local builtin = ug_require "::/gui/main/builtin.lua" as Builtin
 local react = ug_require "::/gui/main/react.lua" as React
 local globals = ug_require "::/gui/main/game_react_globals.tl" as GameReactGlobals
 local lang_util = ug_require "::/scripts/lang_util.tl" as LangUtil
-local model = ug_require "/noter/model.tl" as NoterModel
-local logger = ug_require "/noter/logger.tl" as ModLogging.Logger
+local model = ug_require "apasz_noter::/noter/model.tl" as NoterModel
+local logger = ug_require "apasz_noter::/noter/logger.tl" as ModLogging.Logger
 
 local MOD_ID = getOwningModId()
 local WINDOW_ID = "noter.notebook"
