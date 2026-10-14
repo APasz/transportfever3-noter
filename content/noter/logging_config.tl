@@ -1,0 +1,3 @@
+local DEBUG_LOGGING_ENABLED = false
+
+return DEBUG_LOGGING_ENABLED

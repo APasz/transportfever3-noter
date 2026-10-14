@@ -1,0 +1,20 @@
+{
+    "dependencies": null,
+    "incompatibilities": null,
+    "modId": "apasz_noter",
+    "visible": true,
+    "cosmetic": true,
+    "severityAdd": "None",
+    "severityRemove": "Warning",
+    "params": null,
+    "postRunScript": {
+        "fileName": ""
+    },
+    "preRunScript": {
+        "fileName": ""
+    },
+    "revision": 1,
+    "runScript": {
+        "fileName": ""
+    }
+}
