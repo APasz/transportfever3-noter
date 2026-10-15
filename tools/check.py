@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 from zipfile import ZipFile
 
-from localization import check_localization, load_object, lua_catalog
+from localization import check_localization, lua_catalog
 
 
 def main() -> None:
@@ -25,7 +25,6 @@ def main() -> None:
     )
     args = parser.parse_args()
     mod_root = Path(__file__).resolve().parents[1]
-    load_object(mod_root / "mod.json")
     catalog = check_localization(mod_root, args.game_dir)
     with tempfile.TemporaryDirectory(prefix="noter-check-") as directory:
         compiler = Path(directory) / "tl.lua"

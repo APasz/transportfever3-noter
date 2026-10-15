@@ -1,5 +1,5 @@
 local logger = ug_require "apasz_noter::/noter/logger.tl" as ModLogging.Logger
-local model : NoterModel = {}
+local model : NoterModel = {MAX_TEXT_LENGTH = 500}
 local FORMAT_VERSION = 1
 
 local function requireValid(condition : boolean, message : string)
@@ -14,18 +14,57 @@ function model.normalizeText(text : string) : string
 	return (text:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
-local function isValidTaskText(text : string, normalized : string) : boolean
-	return normalized ~= "" and not text:find("[%z\1-\31\127]")
+-- The game omits Lua's utf8 library. Count code points and reject malformed UTF-8.
+function model.characterCount(text : string) : integer | nil
+	local count, index = 0, 1
+	while index <= #text do
+		local first = text:byte(index)
+		local width = 1
+		local secondMin, secondMax = 0x80, 0xBF
+		if first <= 0x7F then
+			width = 1
+		elseif first >= 0xC2 and first <= 0xDF then
+			width = 2
+		elseif first >= 0xE0 and first <= 0xEF then
+			width = 3
+			if first == 0xE0 then secondMin = 0xA0 end
+			if first == 0xED then secondMax = 0x9F end
+		elseif first >= 0xF0 and first <= 0xF4 then
+			width = 4
+			if first == 0xF0 then secondMin = 0x90 end
+			if first == 0xF4 then secondMax = 0x8F end
+		else
+			return nil
+		end
+		if index + width - 1 > #text then return nil end
+		for offset = 1, width - 1 do
+			local byte = text:byte(index + offset)
+			local minimum = offset == 1 and secondMin or 0x80
+			local maximum = offset == 1 and secondMax or 0xBF
+			if byte < minimum or byte > maximum then return nil end
+		end
+		count, index = count + 1, index + width
+	end
+	return count
+end
+
+local function taskTextLength(text : string) : integer | nil
+	local normalized = model.normalizeText(text)
+	if normalized == "" or text:find("[%z\1-\31\127]") then return nil end
+	return model.characterCount(normalized)
 end
 
 function model.canSubmitText(text : string) : boolean
-	return isValidTaskText(text, model.normalizeText(text))
+	local length = taskTextLength(text)
+	return length ~= nil and length <= model.MAX_TEXT_LENGTH
 end
 
 local function requireText(text : string) : string
-	local normalized = model.normalizeText(text)
-	requireValid(isValidTaskText(text, normalized), "Tasks must contain non-blank, single-line text")
-	return normalized
+	local length = taskTextLength(text)
+	requireValid(length ~= nil, "Tasks must contain non-blank, single-line UTF-8 text")
+	requireValid((length as integer) <= model.MAX_TEXT_LENGTH,
+		"Tasks must not exceed " .. tostring(model.MAX_TEXT_LENGTH) .. " characters")
+	return model.normalizeText(text)
 end
 
 local function isFiniteNumber(value : any) : boolean
@@ -73,7 +112,8 @@ function model.readNotebook(raw : table | nil) : NoterModel.Notebook
 		requireValid(type(value) == "table", "Invalid task")
 		requireValid(isInteger(value.id) and value.id > 0 and value.id < notebook.nextId and not seen[value.id],
 			"Invalid or duplicate task ID")
-		requireValid(type(value.text) == "string" and model.canSubmitText(value.text), "Invalid task text")
+		-- Existing saves may contain notes written before the input limit was introduced.
+		requireValid(type(value.text) == "string" and taskTextLength(value.text) ~= nil, "Invalid task text")
 		requireValid(type(value.completed) == "boolean", "Invalid task completion state")
 		if value.point ~= nil then requirePoint(value.point) end
 		seen[value.id] = true

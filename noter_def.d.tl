@@ -25,9 +25,11 @@ global record NoterModel
 		"Down"
 	end
 
+	MAX_TEXT_LENGTH : integer
 	newNotebook : function() : Notebook
 	readNotebook : function(table | nil) : Notebook
 	normalizeText : function(string) : string
+	characterCount : function(string) : integer | nil
 	canSubmitText : function(string) : boolean
 	addTask : function(Notebook, string) : Notebook
 	editTask : function(Notebook, integer, string) : Notebook

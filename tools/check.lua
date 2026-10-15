@@ -64,7 +64,9 @@ local function newRuntime(debugOverride)
 	local runtimeEnvironment = setmetatable({log = {
 		verbose = capture("verbose"), message = capture("message"),
 		warning = capture("warning"), error = capture("error"),
-	}}, {__index = _G})
+	}}, {__index = function(_, key)
+		if key ~= "utf8" then return _G[key] end
+	end})
 	local modules = {}
 	modules["apasz_noter::/noter/logging.lua"] = assert(loadfile(modRoot .. "/content/noter/logging.lua", "t", runtimeEnvironment))()
 	if debugOverride ~= nil then modules["apasz_noter::/noter/logging_config.tl"] = debugOverride end
@@ -76,6 +78,7 @@ local function newRuntime(debugOverride)
 		return modules[path]
 	end
 	return {
+		environment = runtimeEnvironment,
 		model = runtimeEnvironment.ug_require("apasz_noter::/noter/model.tl"),
 		logger = runtimeEnvironment.ug_require("apasz_noter::/noter/logger.tl"),
 		debugLoggingEnabled = runtimeEnvironment.ug_require("apasz_noter::/noter/logging_config.tl"),
@@ -85,6 +88,7 @@ local function newRuntime(debugOverride)
 end
 
 local runtime = newRuntime()
+assert(runtime.environment.utf8 == nil, "The game does not expose Lua's utf8 library")
 assert(not runtime.debugLoggingEnabled, "Production debug logging must default to disabled")
 assert(loadfile(modRoot .. "/tests/model_test.lua"))(runtime.model)
 local testUi = assert(loadfile(modRoot .. "/tests/ui_test.lua"))

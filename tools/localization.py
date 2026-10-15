@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 import json
+import math
 from pathlib import Path
 import re
 from typing import cast
@@ -52,6 +53,46 @@ def placeholders(text: str) -> Counter[str]:
     return Counter(PLACEHOLDER.findall(text))
 
 
+def check_mod_parameters(mod_root: Path) -> set[str]:
+    parameters = load_object(mod_root / "mod.json").get("params")
+    if parameters is None:
+        return set()
+    if not isinstance(parameters, list):
+        raise ValueError("mod.json: params must be an array")
+    references: set[str] = set()
+    for index, parameter in enumerate(parameters):
+        location = f"mod.json:params[{index}]"
+        if not isinstance(parameter, dict):
+            raise ValueError(f"{location}: expected an object")
+        for field in ("name", "tooltip"):
+            text = parameter.get(field)
+            if field == "tooltip" and text is None:
+                continue
+            if not isinstance(text, str) or not text:
+                raise ValueError(f"{location}: invalid {field}")
+            references.add(text)
+        values = parameter.get("values")
+        if (
+            not isinstance(values, list)
+            or not values
+            or any(not isinstance(value, str) or not value.strip() for value in values)
+        ):
+            raise ValueError(f"{location}: invalid values")
+        default_index = parameter.get("defaultIndex", 0)
+        if type(default_index) is not int or not 0 <= default_index < len(values):
+            raise ValueError(f"{location}: defaultIndex must be a zero-based option index")
+        numbers = parameter.get("numbers")
+        if numbers is not None and (
+            not isinstance(numbers, list)
+            or len(numbers) != len(values)
+            or any(type(number) is not float or not math.isfinite(number) for number in numbers)
+        ):
+            raise ValueError(f"{location}: numbers must be finite doubles matching values")
+        if parameter.get("uiType") != "IconButton":
+            references.update(cast(list[str], values))
+    return references
+
+
 def check_localization(mod_root: Path, game_root: Path) -> Catalog:
     with ZipFile(game_root / "base/content/locale.zip") as archive:
         locales = {
@@ -67,6 +108,7 @@ def check_localization(mod_root: Path, game_root: Path) -> Catalog:
         key for path in (mod_root / "content").rglob("*.tl")
         for key in LOCALIZED_STRING.findall(path.read_text(encoding="utf-8"))
     }
+    references.update(check_mod_parameters(mod_root))
     if not references or references != set(english):
         raise ValueError(f"Referenced UI keys differ from English catalogue: {references ^ set(english)}")
     for locale, entries in catalog.items():

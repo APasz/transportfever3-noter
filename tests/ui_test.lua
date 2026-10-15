@@ -17,19 +17,55 @@ local function copy(value)
 	return result
 end
 
-local instances, context, joins, recipes = {}, nil, {}, {}
+local palette = {BaseDarkMedium = {0.12, 0.16, 0.2, 0.4},
+	NeutralMedium = {0.4, 0.5, 0.6, 1}, NeutralLightest = {0.9, 0.8, 0.7, 1},
+	AccentMedium = {0.1, 0.3, 0.5, 1}}
+local rules = {}
+local styleEnv = {
+	require = function(path)
+		if path == "::/gui/main/stylesheetutil.lua" then
+			return {makeAdder = function()
+				return function(selectors, style)
+					for selector in selectors:gmatch("[^,]+") do
+						selector = selector:match("^%s*(.-)%s*$")
+						local properties = rules[selector] or {}
+						for key, value in pairs(style) do properties[key] = value end
+						rules[selector] = properties
+					end
+				end
+			end}
+		elseif path == "::/gui/main/color_util.tl" then
+			return {withTransparencyRaw = function(color, alpha) return {color[1], color[2], color[3], alpha} end}
+		end
+		error("Unexpected stylesheet dependency: " .. path)
+	end,
+	api = {gui = {genericRep = {
+		find = function(path) assert(path == "::/gui/main/default_colors.gres"); return 1 end,
+		get = function() return {data = palette} end,
+	}}},
+}
+assert(loadfile(modRoot .. "/content/noter/noter.css.lua", "t", styleEnv))()
+styleEnv.data()
+local scope = "Window#noter.notebook "
+
+local instances, context, joins = {}, nil, {}
 local builtinKinds = {}
 local layoutKinds = {BoxLayout = true, FlowLayout = true, FloatingLayout = true, TableLayout = true, AbsoluteLayout = true}
 local window, tool, toolbar
 local toolStack = {}
 local saveId = "first"
 local saves = {first = {}, second = {}}
+local modParams = {}
 local writeCount = 0
 local terrainAvailable = true
 local terrainPoint = {x = 120, y = -30, z = 8}
 local located
 local flashes = {}
 local focusCount = 0
+local taskButtonWidth = 1600
+local viewportSize = {x = 2560, y = 1440}
+local assignedStyleSizes = {}
+local styleAssignments = 0
 local windowApiAvailable = true
 local toolStackAvailable = true
 local language = "en"
@@ -54,12 +90,12 @@ local function state(value)
 		old = function(self) return self.value end,
 		get = function(self) return self.value end,
 		set = function(self, nextValue) self.value = nextValue end,
+		transform = function(self, fn) self:set(fn(self:get())) end,
 	}
 end
 
 local function recipe(name, fn, wrappedKind)
 	local registered = {name = name, fn = fn, wrappedKind = wrappedKind}
-	recipes[name] = registered
 	return setmetatable(registered, {__call = function(self, params)
 		return {kind = "recipe", recipe = self, params = params or {}}
 	end})
@@ -82,18 +118,15 @@ local react = {
 	end,
 	useNodeRef = function()
 		return hook(function()
-			return {get = function() return {focus = function() focusCount = focusCount + 1 end} end}
+			return {
+				get = function() return {focus = function() focusCount = focusCount + 1 end} end,
+				hasExpired = function() return false end,
+			}
 		end)
 	end,
 	ref = function(ref) return {nodeRef = ref} end,
-	useSelfRef = function()
-		return hook(function()
-			return {get = function()
-				return {containsPosition = function(_, position) return position.x >= 0 and position.y >= 0 end}
-			end}
-		end)
-	end,
 	onMount = function(fn) context.mount[#context.mount + 1] = fn end,
+	onStep = function(fn) context.step[#context.step + 1] = fn end,
 	onMouseEvent = function(fn) context.mouseEvents[#context.mouseEvents + 1] = fn end,
 	onUnmount = function(fn) context.unmount[#context.unmount + 1] = fn end,
 	enqueueJoin = function(fn) joins[#joins + 1] = fn end,
@@ -178,6 +211,7 @@ local environment = setmetatable({
 		return assert(dependencies[path], "Unexpected UI dependency: " .. path)
 	end,
 	api = {
+		engine = {config = {getModParams = function() return modParams end}},
 		gui = {
 			spawnEphemeralHudImage = function(icon, entity, color, position, duration, fadeIn, fadeOut)
 				flashes[#flashes + 1] = {icon = icon, entity = entity, color = color, position = position,
@@ -190,21 +224,39 @@ local environment = setmetatable({
 					writeCount = writeCount + 1
 				end,
 			},
-			byId = {setVisible = function() end},
+			byId = {
+				setVisible = function() end,
+				getSize = function(id)
+					assert(id:match("^noter%.notebook%.task%.%d+$"), "Only task buttons need width measurements")
+					return {x = taskButtonWidth / viewportSize.x, y = 24 / viewportSize.y}
+				end,
+			},
+			StyleSheet = {new = function()
+				return setmetatable({}, {
+					__index = function(_, key)
+						if key == "size" then error("Native StyleSheet.size cannot be read back") end
+					end,
+					__newindex = function(style, key, value)
+						assert(key == "size", "Unexpected inline style property: " .. key)
+						assignedStyleSizes[style] = value
+						styleAssignments = styleAssignments + 1
+					end,
+				})
+			end},
 			mouse = {hasTerrainPosition = function() return terrainAvailable end,
 				getTerrainPosition = function() return terrainPoint end,
 				Event = {Type = {Clicked = "Clicked", DoubleClicked = "DoubleClicked"}}},
-			camera = {getCameraData = function() return {z = 700} end,
+			camera = {getSize = function() return viewportSize end,
+				getCameraData = function() return {z = 700} end,
 				setManualCamera = function(center, distance) located = {center = center, distance = distance} end},
 		},
 		type = {
-			Vec2i = {new = function(x, y) return {x = x, y = y} end},
 			Vec2f = {new = function(x, y) return {x = x, y = y} end},
 			Vec3f = {new = function(x, y, z) return {x = x, y = y, z = z} end},
 		},
 		cmd = {sendCommand = function() error("Notebook edits must not need simulation commands") end},
 	},
-}, {__index = _G})
+}, {__index = runtime.environment})
 
 local exports = assert(load(uiCode, "@ui.script.tl", "t", environment))()
 toolbar = exports.NoterButton()
@@ -217,6 +269,7 @@ local function resolve(node, path, visited, hasActionDescriptor)
 		instances[key] = instance
 		visited[key] = true
 		instance.cursor, instance.unmount, instance.inputActions, instance.mount, instance.mouseEvents = 0, {}, {}, {}, {}
+		instance.step = {}
 		local previousContext = context
 		context = instance
 		local result = node.recipe.fn(node.params)
@@ -285,6 +338,7 @@ local function render()
 		if not visited[key] then removed[#removed + 1] = key; for _, fn in ipairs(instance.unmount) do fn() end end
 	end
 	for _, key in ipairs(removed) do instances[key] = nil end
+	for _, instance in pairs(instances) do for _, fn in ipairs(instance.step) do fn() end end
 	flush()
 	return root, notebookWindow, selector, action
 end
@@ -357,24 +411,106 @@ expect(view.params.initialX == 0.04 and view.params.initialY == 0.1,
 	"Notebook initially opens 4% from the left and 10% from the top, matching UIT")
 expect(view.params.title == "Noter · 0 remaining" and focusCount == 1,
 	"Opening focuses the composer and shows the remaining count")
+expect(view.params.expanded == false, "Notebook opens at normal size")
+expect(view.params.meta.class == nil, "Missing mod parameters preserve the native window transparency")
 local writesBeforeNoop = writeCount
 view.params.onPinned(false)
 local hide = assert(find(view, function(node) return node.kind == "CheckBox" and node.params.label == "Hide completed" end))
 hide.params.onValueChange(0)
 expect(writeCount == writesBeforeNoop, "Unchanged native preference events do not dirty the save")
 local input = assert(find(view, function(node) return node.kind == "TextInputField" end))
-input.params.onTyping("Extend the railway")
+expect(input.params.maxLength == model.MAX_TEXT_LENGTH, "The composer uses the shared character limit")
+local writesBeforeInvalidInput = writeCount
+input.params.onTyping(string.rep("x", model.MAX_TEXT_LENGTH + 1))
+_, view = render()
+expect(not findButton(view, "Add").params.meta.enabled, "Over-limit drafts disable Add")
+input = assert(find(view, function(node) return node.kind == "TextInputField" end))
+input.params.onValueChange(string.rep("x", model.MAX_TEXT_LENGTH + 1))
+expect(writeCount == writesBeforeInvalidInput, "Over-limit submissions cannot bypass the input control")
+local writesBeforeResize = writeCount
+input.params.onTyping("Draft while resizing")
+local resizeButton = tooltipButton(view.params.header, "Expand window")
+expect(resizeButton.kind == "Button" and resizeButton.params.content.kind == "ImageView",
+	"The native window header contains the expand icon button")
+local headerChildren = view.params.header.params.children
+expect(headerChildren[1].kind == "TextView" and headerChildren[1].params.text == view.params.title
+	and headerChildren[2] == resizeButton,
+	"The header places the title before the resize control")
+resizeButton.params.onClick()
+_, view = render()
+input = assert(find(view, function(node) return node.kind == "TextInputField" end))
+expect(view.params.expanded and input.params.value == "Draft while resizing" and focusCount == 1,
+	"Expanding preserves the composer draft without requesting focus")
+tooltipButton(view.params.header, "Restore normal size").params.onClick()
+_, view = render()
+input = assert(find(view, function(node) return node.kind == "TextInputField" end))
+expect(not view.params.expanded and input.params.value == "Draft while resizing" and writeCount == writesBeforeResize,
+	"Restoring normal size preserves the draft without changing save data")
+local longTaskText = string.rep("A long task with many words to wrap ", 12) .. "end."
+input.params.onTyping(longTaskText)
 findButton(view, "Add").params.onClick()
 expect(#notebook().tasks == 1, "Add uses latest typed text before rerender")
 _, view = render()
 expect(view.params.title == "Noter · 1 remaining", "Adding updates the title count")
+expect(focusCount == 1, "Updating the open notebook does not request text focus again")
+local writesBeforePreview = writeCount
+clickTask(view, 1)
+_, view = render()
+expect(not taskRow(view, 1).params.meta.class:find("noter-selected", 1, true)
+	and not getButton(taskRow(view, 1), "Edit"), "Clicking a selected note collapses its preview and actions")
+clickTask(view, 1)
+_, view = render()
+expect(taskRow(view, 1).params.meta.class:find("noter-selected", 1, true)
+	and getButton(taskRow(view, 1), "Edit") and taskButton(view, 1).params.content.params.text == longTaskText
+	and notebook().tasks[1].text == longTaskText and writeCount == writesBeforePreview and focusCount == 1,
+	"Selecting a note enables its preview without changing the text, save data or focus")
+tooltipButton(view, "Expand window").params.onClick()
+for _, allocatedWidth in ipairs({1600, 2200, 900}) do
+	taskButtonWidth = allocatedWidth
+	render()
+	_, view = render()
+	local text = taskButton(view, 1).params.content
+	local size = assert(assignedStyleSizes[text.params.meta.styleSheet])
+	expect(size.x == allocatedWidth and size.y == -1 and text.params.text == longTaskText,
+		"Expanded previews use the allocated row width as the wrap boundary without changing the text")
+end
+for _, viewportWidth in ipairs({1280, 3840}) do
+	viewportSize.x = viewportWidth
+	taskButtonWidth = 0.75 * viewportWidth
+	render()
+	_, view = render()
+	local textStyle = taskButton(view, 1).params.content.params.meta.styleSheet
+	expect(assignedStyleSizes[textStyle].x == taskButtonWidth,
+		"A fractional component width is converted to pixels at the current viewport resolution")
+end
+local settledStyle = taskButton(view, 1).params.content.params.meta.styleSheet
+local assignmentsBeforeStableWidth = styleAssignments
+_, view = render()
+expect(taskButton(view, 1).params.content.params.meta.styleSheet == settledStyle
+	and styleAssignments == assignmentsBeforeStableWidth,
+	"Stable widths reuse the cached style without accessing native style getters")
+clickTask(view, 1)
+taskButtonWidth = 1200
+render()
+_, view = render()
+local collapsedExpandedText = taskButton(view, 1).params.content
+expect(assignedStyleSizes[collapsedExpandedText.params.meta.styleSheet].x == taskButtonWidth
+	and not getButton(taskRow(view, 1), "Edit"),
+	"Collapsed notes also use the current expanded width while keeping their actions hidden")
+clickTask(view, 1)
+_, view = render()
+tooltipButton(view, "Restore normal size").params.onClick()
+_, view = render()
+expect(taskButton(view, 1).params.content.params.meta.styleSheet == nil and getButton(taskRow(view, 1), "Edit")
+	and writeCount == writesBeforePreview and focusCount == 1,
+	"Restoring normal size removes the expanded width while preserving selection, notes and focus")
 input = assert(find(view, function(node) return node.kind == "TextInputField" end))
 expect(input.params.value == "", "Composer clears after adding")
 input.params.onValueChange("Buy a train")
 _, view = render()
 expect(not getButton(taskRow(view, 1), "Edit") and getButton(taskRow(view, 2), "Edit"),
 	"Only the selected task shows its actions")
-expect(reorderChecks == 2, "Only the expanded task checks its two reorder directions")
+expect(reorderChecks == 2, "Only the selected task checks its two reorder directions")
 expect(tooltipButton(taskRow(view, 2), "Move up").params.content.kind == "ImageView"
 	and not tooltipButton(taskRow(view, 2), "Move down").params.meta.enabled,
 	"Reordering uses arrow icons, tooltips, and boundary disabling")
@@ -395,7 +531,7 @@ hide = assert(find(view, function(node) return node.kind == "CheckBox" and node.
 hide.params.onValueChange(1)
 _, view = render()
 expect(notebook().hideCompleted and not find(view, function(node)
-	return node.kind == "TextView" and node.params.text == "Extend the railway"
+	return node.kind == "TextView" and node.params.text == longTaskText
 end), "Hide completed removes finished tasks from the window")
 hide = assert(find(view, function(node) return node.kind == "CheckBox" and node.params.label == "Hide completed" end))
 hide.params.onValueChange(0)
@@ -438,12 +574,12 @@ expect(changePointContent[1].params.path == setPointContent[1].params.path
 	"Change point keeps the same pin icon and its own translated label")
 local linkedRow = taskRow(view, 2)
 local linkedLine = linkedRow.params.children[1].params.children
-expect(linkedLine[1].kind == "CheckBox" and linkedLine[2].params.meta.class == "iconlabelindicator-icon-size"
+expect(linkedLine[1].kind == "CheckBox" and linkedLine[2].params.meta.class == "noter-pin-slot"
 	and tooltipButton(linkedLine[2], "Go to map point")
 	and linkedLine[3].params.meta.class == "noter-task-button",
 	"The pin column is directly after the checkbox and before the task text")
 local unlinkedLine = taskRow(view, 1).params.children[1].params.children
-expect(unlinkedLine[2].params.meta.class == "iconlabelindicator-icon-size"
+expect(unlinkedLine[2].params.meta.class == linkedLine[2].params.meta.class
 	and unlinkedLine[2].params.layout == nil,
 	"Unlinked tasks keep an empty pin column to align the text")
 local writesBeforeGo = writeCount
@@ -563,10 +699,18 @@ expect(reorderChecks == 0, "Text editing performs no reorder scans")
 local editor = assert(findButton(view, "Save"))
 local row = taskRow(view, 2)
 local editInput = assert(find(row, function(node) return node.kind == "TextInputField" end))
+expect(editInput.params.maxLength == model.MAX_TEXT_LENGTH, "Editing uses the same character limit as Add")
 expect(tooltipButton(row.params.children[1].params.children[2], "Go to map point")
 	and #row.mouseEvents == 0,
 	"Editing preserves the pin column and leaves mouse handling to native editor controls")
 editInput.params.onTyping("Upgrade the railway")
+local focusBeforeResize = focusCount
+tooltipButton(view, "Expand window").params.onClick()
+_, view = render()
+editInput = assert(find(taskRow(view, 2), function(node) return node.kind == "TextInputField" end))
+expect(view.params.expanded and editInput.params.value == "Upgrade the railway" and focusCount == focusBeforeResize,
+	"Expanding during an edit preserves the selected row, draft and focus")
+editor = findButton(view, "Save")
 editor.params.onClick()
 expect(notebook().tasks[1].text == "Upgrade the railway", "Save commits the edited text")
 _, view = render()
@@ -589,7 +733,7 @@ editInput = assert(find(taskRow(view, 2), function(node) return node.kind == "Te
 editInput.params.onValueChange("Upgrade both platforms")
 _, view = render()
 expect(notebook().tasks[1].text == "Upgrade both platforms" and not getButton(view, "Save"),
-	"Enter accepts the edit and returns to the compact row")
+	"Enter accepts the edit and returns to the task view")
 
 findButton(view, "Change point").params.onClick()
 flush()
@@ -664,9 +808,12 @@ view.params.onClose()
 flush()
 root = render()
 expect(window == nil and toolbarButton(root).params.value == 0, "Close updates the toolbar toggle")
+local focusBeforeReopen = focusCount
 toolbarButton(root).params.onValueChange(1)
 flush()
 _, view = render()
+expect(focusCount == focusBeforeReopen + 1, "Reopening the notebook requests text focus once")
+expect(view.params.expanded == false, "Reopening resets the window to normal size")
 expect(notebook().tasks[1].text == "Upgrade both platforms" and view.params.pinned,
 	"Close/reopen restores notebook and pin preference")
 expect(not getButton(view, "Edit"), "Reopening begins with compact, unselected rows")
@@ -726,40 +873,104 @@ local resource = resourceEnv.data()
 expect(resource.type == "react-plugin ::MainModButtonAreaExtension"
 	and resource.data.filePath == "apasz_noter::/noter/ui.script@NoterButton", "Plugin resource resolves its export")
 
-local palette = {NeutralMedium = {0.4, 0.5, 0.6, 1}, NeutralLightest = {0.9, 0.8, 0.7, 1},
-	AccentMedium = {0.1, 0.3, 0.5, 1}}
-local rules = {}
-local styleEnv = {
-	require = function(path)
-		if path == "::/gui/main/stylesheetutil.lua" then
-			return {makeAdder = function()
-				return function(selector, style) rules[selector] = style end
-			end}
-		elseif path == "::/gui/main/color_util.tl" then
-			return {withTransparencyRaw = function(color, alpha) return {color[1], color[2], color[3], alpha} end}
-		end
-		error("Unexpected stylesheet dependency: " .. path)
-	end,
-	api = {gui = {genericRep = {
-		find = function(path) assert(path == "::/gui/main/default_colors.gres"); return 1 end,
-		get = function() return {data = palette} end,
-	}}},
-}
-assert(loadfile(modRoot .. "/content/noter/noter.css.lua", "t", styleEnv))()
-styleEnv.data()
-local scope = "Window#noter.notebook "
 expect(rules[scope .. "!noter-row"].borderWidth[4] > 0, "Task rows have a separator")
+local opaqueColor = rules["Window#noter.notebook!noter-opaque"].backgroundColor1
+expect(opaqueColor[1] == palette.BaseDarkMedium[1] and opaqueColor[2] == palette.BaseDarkMedium[2]
+	and opaqueColor[3] == palette.BaseDarkMedium[3] and opaqueColor[4] == 1,
+	"Opaque windows use the current theme's background colour at full opacity")
+expect(rules["Window#noter.notebook"].backgroundColor1 == nil,
+	"The default window keeps the native theme's transparency")
 expect(rules[scope .. "!noter-selected"].backgroundColor1[2] == palette.AccentMedium[2],
 	"Selection uses the active theme's accent colour")
-local iconSlotClass = linkedLine[2].params.meta.class
-expect(iconSlotClass == "iconlabelindicator-icon-size"
-	and toolbarButton(root).params.content.params.meta.class == iconSlotClass,
-	"Pin columns and the toolbar icon share the game's built-in icon size")
+local pinSlotStyle = rules[scope .. "!" .. linkedLine[2].params.meta.class]
+local iconWidth = rules[scope .. "!noter-icon"].size[1]
+local iconPadding = rules[scope .. "!noter-icon-button"].padding
+local pinButtonWidth = iconWidth + iconPadding[2] + iconPadding[4]
+expect(pinSlotStyle.minSize[1] == pinButtonWidth and pinSlotStyle.maxSize[1] == pinButtonWidth,
+	"Pin columns fit the pin button exactly without taking extra task-text width")
 local completedColor = rules[scope .. "!noter-completed TextView!noter-text"].color
 expect(completedColor[1] == palette.NeutralLightest[1] and completedColor[4] < palette.NeutralLightest[4],
 	"Completed text is dimmed using the active theme")
+local collapsedTextStyle = rules[scope .. "!noter-text"]
+local previewTextStyle = rules[scope .. "!noter-selected TextView!noter-text"]
+expect(collapsedTextStyle.textAutoWrap == false and collapsedTextStyle.size[1] > 0
+	and collapsedTextStyle.minSize[1] == collapsedTextStyle.size[1]
+	and collapsedTextStyle.maxSize[1] == collapsedTextStyle.size[1],
+	"Collapsed notes have a finite single-line text column")
+expect(previewTextStyle.textAutoWrap and previewTextStyle.maxSize[1] == collapsedTextStyle.size[1]
+	and previewTextStyle.maxSize[2] > 0,
+	"Selected notes wrap in the same text column with a bounded preview height")
+expect(collapsedTextStyle.gravity[1] == 0 and rules[scope .. "!noter-task-button"].gravity[1] == 0,
+	"Normal-size note previews stay left-aligned")
+local expandedScope = "Window#noter.notebook!window-expanded "
+local expandedTextStyle = rules[expandedScope .. "TextView!noter-text"]
+expect(rules[expandedScope .. "!noter-task-button"].gravity[1] == -1
+	and expandedTextStyle.gravity[1] == -1 and expandedTextStyle.minSize[1] == 0
+	and expandedTextStyle.maxSize[1] == -1,
+	"Expanded note buttons fill the row and text can grow beyond the normal width")
+local expandedPreviewStyle = rules[expandedScope .. "!noter-selected TextView!noter-text"]
+expect(expandedPreviewStyle.maxSize[1] == -1 and expandedPreviewStyle.maxSize[2] == previewTextStyle.maxSize[2],
+	"Expanded previews keep the height cap while allowing the entire row width")
 
 windowApiAvailable = true
+local writesBeforeAppearance = writeCount
+for _, case in ipairs({
+	{name = "Missing parameter", parameters = {}, opaque = false},
+	{name = "Off (option 1)", parameters = {apasz_noter_opaque_window = 1}, opaque = false},
+	{name = "On (option 2)", parameters = {apasz_noter_opaque_window = 2}, opaque = true},
+}) do
+	modParams = {apasz_noter = case.parameters}
+	toolbarButton(root).params.onValueChange(1)
+	flush()
+	_, view = render()
+	local expectedClass = case.opaque and "noter-opaque" or nil
+	expect(view.params.meta.class == expectedClass, case.name .. ": normal window uses the requested appearance")
+	tooltipButton(view, "Expand window").params.onClick()
+	_, view = render()
+	expect(view.params.expanded and view.params.meta.class == expectedClass,
+		case.name .. ": expanded window uses the requested appearance")
+	view.params.onClose()
+	flush()
+	root = render()
+end
+expect(writeCount == writesBeforeAppearance, "Window appearance is independent of notebook save data")
+modParams = {}
+saveId = "legacy"
+local legacyText = string.rep("🚂", model.MAX_TEXT_LENGTH + 100)
+local legacyNotebook = model.newNotebook()
+legacyNotebook.nextId = 2
+legacyNotebook.tasks = {{id = 1, text = legacyText, completed = false}}
+saves[saveId] = {apasz_noter = legacyNotebook}
+toolbarButton(root).params.onValueChange(1)
+flush()
+_, view = render()
+expect(taskButton(view, 1).params.content.params.text == legacyText,
+	"The preview retains all of an older note's text")
+clickTask(view, 1, "DoubleClicked")
+_, view = render()
+editInput = assert(find(taskRow(view, 1), function(node) return node.kind == "TextInputField" end))
+expect(editInput.params.value == legacyText and editInput.params.maxLength >= utf8.len(legacyText)
+	and not findButton(view, "Save").params.meta.enabled,
+	"An older long note opens intact for editing and cannot be saved above the new limit")
+local writesBeforeLegacyCancel = writeCount
+editInput.params.onValueChange(legacyText)
+editInput.params.onCancel()
+_, view = render()
+expect(notebook().tasks[1].text == legacyText and writeCount == writesBeforeLegacyCancel,
+	"Rejected submissions and Cancel preserve an older long note")
+findButton(view, "Edit").params.onClick()
+_, view = render()
+editInput = assert(find(taskRow(view, 1), function(node) return node.kind == "TextInputField" end))
+local shortenedText = string.rep("界", model.MAX_TEXT_LENGTH)
+editInput.params.onTyping(shortenedText)
+_, view = render()
+expect(findButton(view, "Save").params.meta.enabled, "Shortening an older note to the limit enables Save")
+findButton(view, "Save").params.onClick()
+expect(notebook().tasks[1].text == shortenedText, "Saving a shortened older note preserves its Unicode text")
+_, view = render()
+view.params.onClose()
+flush()
+root = render()
 for locale, texts in pairs(runtime.translations) do
 	language = locale
 	saveId = "locale_" .. locale
@@ -772,6 +983,15 @@ for locale, texts in pairs(runtime.translations) do
 	input = assert(find(view, function(node) return node.kind == "TextInputField" end))
 	expect(input.params.placeholderText == texts.APASZ_NOTER_ENTER_TASK,
 		locale .. ": the task placeholder is translated")
+	expect(input.params.meta.tooltip == langUtil.format(texts.APASZ_NOTER_TEXT_LIMIT,
+		{count = tostring(model.MAX_TEXT_LENGTH)}), locale .. ": the character limit tooltip is translated")
+	tooltipButton(view, texts.APASZ_NOTER_EXPAND).params.onClick()
+	_, view = render()
+	expect(view.params.expanded, locale .. ": the translated expand control expands the window")
+	tooltipButton(view, texts.APASZ_NOTER_NORMAL_SIZE).params.onClick()
+	_, view = render()
+	expect(not view.params.expanded, locale .. ": the translated restore control returns to normal size")
+	input = assert(find(view, function(node) return node.kind == "TextInputField" end))
 	local literalNote = "User note · APASZ_NOTER_ADD"
 	input.params.onValueChange(literalNote)
 	_, view = render()
@@ -801,6 +1021,17 @@ for locale, texts in pairs(runtime.translations) do
 	expect(view.params.title == langUtil.format(texts.APASZ_NOTER_TITLE_REMAINING, {count = "2"}),
 		locale .. ": the title formats multiple remaining")
 	view.params.onClose()
+	flush()
+	root = render()
+end
+for _, invalidValue in ipairs({0, 3, -1, 0.5, "1", true}) do
+	modParams = {apasz_noter = {apasz_noter_opaque_window = invalidValue}}
+	toolbarButton(root).params.onValueChange(1)
+	flush()
+	local ok, invalidParameter = pcall(render)
+	expect(not ok and tostring(invalidParameter):find("[Noter] ERROR: Invalid opaque-window parameter:", 1, true),
+		"Invalid opacity parameters fail explicitly instead of choosing an appearance")
+	toolbarButton(root).params.onValueChange(0)
 	flush()
 	root = render()
 end

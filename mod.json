@@ -6,14 +6,30 @@
     "cosmetic": true,
     "severityAdd": "None",
     "severityRemove": "Warning",
-    "params": null,
+    "params": [
+        {
+            "key": "apasz_noter_opaque_window",
+            "name": "APASZ_NOTER_OPAQUE_WINDOW",
+            "tooltip": "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP",
+            "uiType": "CheckBox",
+            "values": [
+                "APASZ_NOTER_OFF",
+                "APASZ_NOTER_ON"
+            ],
+            "numbers": [
+                1.0,
+                2.0
+            ],
+            "defaultIndex": 0
+        }
+    ],
     "postRunScript": {
         "fileName": ""
     },
     "preRunScript": {
         "fileName": ""
     },
-    "revision": 1,
+    "revision": 2,
     "runScript": {
         "fileName": ""
     }

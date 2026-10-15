@@ -24,7 +24,14 @@
         "APASZ_NOTER_PICK_POINT_PROMPT": "Click a map point. Escape or right-click cancels.",
         "APASZ_NOTER_SAVE_HINT": "Save the game to keep your notes",
         "APASZ_NOTER_TITLE_REMAINING": "Noter · {count} remaining",
-        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: to-do notebook"
+        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: to-do notebook",
+        "APASZ_NOTER_EXPAND": "Expand window",
+        "APASZ_NOTER_NORMAL_SIZE": "Restore normal size",
+        "APASZ_NOTER_TEXT_LIMIT": "Maximum {count} characters",
+        "APASZ_NOTER_OPAQUE_WINDOW": "Opaque window",
+        "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Use a solid notebook background instead of transparency.",
+        "APASZ_NOTER_OFF": "Off",
+        "APASZ_NOTER_ON": "On"
     },
     "de": {
         "APASZ_NOTER_ENTER_TASK": "Aufgabe eingeben",
@@ -51,7 +58,14 @@
         "APASZ_NOTER_PICK_POINT_PROMPT": "Kartenpunkt wählen. Esc oder Rechtsklick bricht ab.",
         "APASZ_NOTER_SAVE_HINT": "Speichere das Spiel, um deine Notizen zu behalten",
         "APASZ_NOTER_TITLE_REMAINING": "Noter · Offen: {count}",
-        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: Aufgaben und Notizen"
+        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: Aufgaben und Notizen",
+        "APASZ_NOTER_EXPAND": "Fenster vergrößern",
+        "APASZ_NOTER_NORMAL_SIZE": "Normale Größe wiederherstellen",
+        "APASZ_NOTER_TEXT_LIMIT": "Maximal {count} Zeichen",
+        "APASZ_NOTER_OPAQUE_WINDOW": "Undurchsichtiges Fenster",
+        "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Verwendet einen undurchsichtigen Hintergrund für das Notizbuch.",
+        "APASZ_NOTER_OFF": "Aus",
+        "APASZ_NOTER_ON": "Ein"
     },
     "es": {
         "APASZ_NOTER_ENTER_TASK": "Introduce una tarea",
@@ -78,7 +92,14 @@
         "APASZ_NOTER_PICK_POINT_PROMPT": "Elige un punto. Esc o clic derecho para cancelar.",
         "APASZ_NOTER_SAVE_HINT": "Guarda la partida para conservar tus notas",
         "APASZ_NOTER_TITLE_REMAINING": "Noter · Por hacer: {count}",
-        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: libreta de tareas"
+        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: libreta de tareas",
+        "APASZ_NOTER_EXPAND": "Ampliar ventana",
+        "APASZ_NOTER_NORMAL_SIZE": "Restaurar tamaño normal",
+        "APASZ_NOTER_TEXT_LIMIT": "Máximo {count} caracteres",
+        "APASZ_NOTER_OPAQUE_WINDOW": "Ventana opaca",
+        "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Usa un fondo opaco para el cuaderno en lugar de transparencia.",
+        "APASZ_NOTER_OFF": "Desactivado",
+        "APASZ_NOTER_ON": "Activado"
     },
     "fr": {
         "APASZ_NOTER_ENTER_TASK": "Saisissez une tâche",
@@ -105,7 +126,14 @@
         "APASZ_NOTER_PICK_POINT_PROMPT": "Cliquez sur la carte. Échap ou clic droit pour annuler.",
         "APASZ_NOTER_SAVE_HINT": "Sauvegardez la partie pour conserver vos notes",
         "APASZ_NOTER_TITLE_REMAINING": "Noter · À faire : {count}",
-        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter : carnet de tâches"
+        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter : carnet de tâches",
+        "APASZ_NOTER_EXPAND": "Agrandir la fenêtre",
+        "APASZ_NOTER_NORMAL_SIZE": "Rétablir la taille normale",
+        "APASZ_NOTER_TEXT_LIMIT": "Maximum {count} caractères",
+        "APASZ_NOTER_OPAQUE_WINDOW": "Fenêtre opaque",
+        "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Utilise un fond opaque pour le carnet au lieu de la transparence.",
+        "APASZ_NOTER_OFF": "Désactivé",
+        "APASZ_NOTER_ON": "Activé"
     },
     "it": {
         "APASZ_NOTER_ENTER_TASK": "Inserisci un'attività",
@@ -132,7 +160,14 @@
         "APASZ_NOTER_PICK_POINT_PROMPT": "Scegli un punto. Esc o clic destro per annullare.",
         "APASZ_NOTER_SAVE_HINT": "Salva la partita per conservare le tue note",
         "APASZ_NOTER_TITLE_REMAINING": "Noter · Da fare: {count}",
-        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: taccuino delle attività"
+        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: taccuino delle attività",
+        "APASZ_NOTER_EXPAND": "Espandi finestra",
+        "APASZ_NOTER_NORMAL_SIZE": "Ripristina dimensioni normali",
+        "APASZ_NOTER_TEXT_LIMIT": "Massimo {count} caratteri",
+        "APASZ_NOTER_OPAQUE_WINDOW": "Finestra opaca",
+        "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Usa uno sfondo opaco per il taccuino anziché trasparente.",
+        "APASZ_NOTER_OFF": "Disattivato",
+        "APASZ_NOTER_ON": "Attivato"
     },
     "ja": {
         "APASZ_NOTER_ENTER_TASK": "タスクを入力",
@@ -159,7 +194,14 @@
         "APASZ_NOTER_PICK_POINT_PROMPT": "地図上の地点をクリック。Escまたは右クリックでキャンセル。",
         "APASZ_NOTER_SAVE_HINT": "メモを残すにはゲームを保存してください",
         "APASZ_NOTER_TITLE_REMAINING": "Noter · 未完了: {count}",
-        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: タスク用メモ帳"
+        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: タスク用メモ帳",
+        "APASZ_NOTER_EXPAND": "ウィンドウを拡大",
+        "APASZ_NOTER_NORMAL_SIZE": "通常サイズに戻す",
+        "APASZ_NOTER_TEXT_LIMIT": "最大{count}文字",
+        "APASZ_NOTER_OPAQUE_WINDOW": "ウィンドウを不透明にする",
+        "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "ノートの背景を透明ではなく不透明にします。",
+        "APASZ_NOTER_OFF": "オフ",
+        "APASZ_NOTER_ON": "オン"
     },
     "ko": {
         "APASZ_NOTER_ENTER_TASK": "작업 입력",
@@ -186,7 +228,14 @@
         "APASZ_NOTER_PICK_POINT_PROMPT": "지도 지점을 선택하세요. Esc/오른쪽 클릭으로 취소.",
         "APASZ_NOTER_SAVE_HINT": "메모를 유지하려면 게임을 저장하세요",
         "APASZ_NOTER_TITLE_REMAINING": "Noter · 남은 작업: {count}",
-        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: 할 일 메모장"
+        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: 할 일 메모장",
+        "APASZ_NOTER_EXPAND": "창 확장",
+        "APASZ_NOTER_NORMAL_SIZE": "기본 크기로 복원",
+        "APASZ_NOTER_TEXT_LIMIT": "최대 {count}자",
+        "APASZ_NOTER_OPAQUE_WINDOW": "불투명 창",
+        "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "메모장 배경을 투명하지 않은 단색으로 표시합니다.",
+        "APASZ_NOTER_OFF": "끄기",
+        "APASZ_NOTER_ON": "켜기"
     },
     "nl": {
         "APASZ_NOTER_ENTER_TASK": "Voer een taak in",
@@ -213,7 +262,14 @@
         "APASZ_NOTER_PICK_POINT_PROMPT": "Kies een kaartpunt. Esc of rechtsklik annuleert.",
         "APASZ_NOTER_SAVE_HINT": "Sla het spel op om je notities te bewaren",
         "APASZ_NOTER_TITLE_REMAINING": "Noter · Te doen: {count}",
-        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: taken en notities"
+        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: taken en notities",
+        "APASZ_NOTER_EXPAND": "Venster vergroten",
+        "APASZ_NOTER_NORMAL_SIZE": "Normale grootte herstellen",
+        "APASZ_NOTER_TEXT_LIMIT": "Maximaal {count} tekens",
+        "APASZ_NOTER_OPAQUE_WINDOW": "Ondoorzichtig venster",
+        "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Gebruik een ondoorzichtige achtergrond voor het notitieboek.",
+        "APASZ_NOTER_OFF": "Uit",
+        "APASZ_NOTER_ON": "Aan"
     },
     "pl": {
         "APASZ_NOTER_ENTER_TASK": "Wpisz zadanie",
@@ -240,7 +296,14 @@
         "APASZ_NOTER_PICK_POINT_PROMPT": "Wybierz punkt. Esc lub prawy klik anuluje.",
         "APASZ_NOTER_SAVE_HINT": "Zapisz grę, aby zachować notatki",
         "APASZ_NOTER_TITLE_REMAINING": "Noter · Do zrobienia: {count}",
-        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: notatnik zadań"
+        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: notatnik zadań",
+        "APASZ_NOTER_EXPAND": "Powiększ okno",
+        "APASZ_NOTER_NORMAL_SIZE": "Przywróć normalny rozmiar",
+        "APASZ_NOTER_TEXT_LIMIT": "Maksymalnie {count} znaków",
+        "APASZ_NOTER_OPAQUE_WINDOW": "Nieprzezroczyste okno",
+        "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Używa nieprzezroczystego tła notatnika zamiast przezroczystości.",
+        "APASZ_NOTER_OFF": "Wyłączone",
+        "APASZ_NOTER_ON": "Włączone"
     },
     "pt_BR": {
         "APASZ_NOTER_ENTER_TASK": "Digite uma tarefa",
@@ -267,7 +330,14 @@
         "APASZ_NOTER_PICK_POINT_PROMPT": "Escolha um ponto. Esc ou botão direito para cancelar.",
         "APASZ_NOTER_SAVE_HINT": "Salve o jogo para manter suas notas",
         "APASZ_NOTER_TITLE_REMAINING": "Noter · A fazer: {count}",
-        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: caderno de tarefas"
+        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: caderno de tarefas",
+        "APASZ_NOTER_EXPAND": "Expandir janela",
+        "APASZ_NOTER_NORMAL_SIZE": "Restaurar tamanho normal",
+        "APASZ_NOTER_TEXT_LIMIT": "Máximo de {count} caracteres",
+        "APASZ_NOTER_OPAQUE_WINDOW": "Janela opaca",
+        "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Usa um fundo opaco para o bloco de notas em vez de transparência.",
+        "APASZ_NOTER_OFF": "Desativado",
+        "APASZ_NOTER_ON": "Ativado"
     },
     "ru": {
         "APASZ_NOTER_ENTER_TASK": "Введите задачу",
@@ -294,7 +364,14 @@
         "APASZ_NOTER_PICK_POINT_PROMPT": "Выберите точку. Esc или правый щелчок — отмена.",
         "APASZ_NOTER_SAVE_HINT": "Сохраните игру, чтобы сохранить заметки",
         "APASZ_NOTER_TITLE_REMAINING": "Noter · Осталось: {count}",
-        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: блокнот задач"
+        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter: блокнот задач",
+        "APASZ_NOTER_EXPAND": "Развернуть окно",
+        "APASZ_NOTER_NORMAL_SIZE": "Восстановить обычный размер",
+        "APASZ_NOTER_TEXT_LIMIT": "Не более {count} символов",
+        "APASZ_NOTER_OPAQUE_WINDOW": "Непрозрачное окно",
+        "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Использовать непрозрачный фон блокнота вместо прозрачного.",
+        "APASZ_NOTER_OFF": "Выкл.",
+        "APASZ_NOTER_ON": "Вкл."
     },
     "zh_CN": {
         "APASZ_NOTER_ENTER_TASK": "输入任务",
@@ -321,7 +398,14 @@
         "APASZ_NOTER_PICK_POINT_PROMPT": "点击地图选择位置。按 Esc 或右键取消。",
         "APASZ_NOTER_SAVE_HINT": "保存游戏以保留笔记",
         "APASZ_NOTER_TITLE_REMAINING": "Noter · 待办：{count}",
-        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter：待办笔记本"
+        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter：待办笔记本",
+        "APASZ_NOTER_EXPAND": "展开窗口",
+        "APASZ_NOTER_NORMAL_SIZE": "恢复正常大小",
+        "APASZ_NOTER_TEXT_LIMIT": "最多 {count} 个字符",
+        "APASZ_NOTER_OPAQUE_WINDOW": "不透明窗口",
+        "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "使用不透明的笔记本背景。",
+        "APASZ_NOTER_OFF": "关闭",
+        "APASZ_NOTER_ON": "开启"
     },
     "zh_TW": {
         "APASZ_NOTER_ENTER_TASK": "輸入任務",
@@ -348,6 +432,13 @@
         "APASZ_NOTER_PICK_POINT_PROMPT": "點選地圖選擇位置。按 Esc 或右鍵取消。",
         "APASZ_NOTER_SAVE_HINT": "儲存遊戲以保留筆記",
         "APASZ_NOTER_TITLE_REMAINING": "Noter · 待辦：{count}",
-        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter：待辦筆記本"
+        "APASZ_NOTER_TOOLBAR_TOOLTIP": "Noter：待辦筆記本",
+        "APASZ_NOTER_EXPAND": "展開視窗",
+        "APASZ_NOTER_NORMAL_SIZE": "還原正常大小",
+        "APASZ_NOTER_TEXT_LIMIT": "最多 {count} 個字元",
+        "APASZ_NOTER_OPAQUE_WINDOW": "不透明視窗",
+        "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "使用不透明的筆記本背景。",
+        "APASZ_NOTER_OFF": "關閉",
+        "APASZ_NOTER_ON": "開啟"
     }
 }

@@ -11,6 +11,21 @@ local function rejects(action, message)
 	expect(not ok and tostring(failure):find("[Noter] ERROR: ", 1, true), message)
 end
 
+expect(model.characterCount("") == 0, "Empty editor text contains zero characters")
+local mixedText = ""
+for _, codepoint in ipairs({0, 0x7F, 0x80, 0x7FF, 0x800, 0xD7FF, 0xE000, 0xFFFF, 0x10000, 0x10FFFF}) do
+	local character = utf8.char(codepoint)
+	expect(model.characterCount(character) == utf8.len(character),
+		"Character counting supports the boundaries of every UTF-8 encoding width")
+	mixedText = mixedText .. character
+end
+expect(model.characterCount(mixedText) == utf8.len(mixedText),
+	"Mixed Unicode text is counted correctly without a runtime utf8 global")
+for _, malformed in ipairs({"\128", "\255", "\194", "\194A", "\224\160", "\240\144\128",
+	"\192\128", "\224\128\128", "\237\160\128", "\240\128\128\128", "\244\144\128\128", "\245\128\128\128"}) do
+	expect(model.characterCount(malformed) == nil, "Reject malformed UTF-8 rather than counting invalid bytes")
+end
+
 local notebook = model.readNotebook({})
 expect(#notebook.tasks == 0 and notebook.nextId == 1, "Fresh notebook")
 expect(#model.readNotebook(nil).tasks == 0, "Missing mod save data initializes an empty notebook")
@@ -78,6 +93,33 @@ for _, text in ipairs({"", "  ", "a\nb", "a\rb", "a\0b"}) do
 	expect(not model.canSubmitText(text), "Reject blank or multiline task input")
 	rejects(function() model.addTask(notebook, text) end, "Reject invalid task text")
 end
+for _, character in ipairs({"x", "🚂", "界"}) do
+	local atLimit = string.rep(character, model.MAX_TEXT_LENGTH)
+	local overLimit = atLimit .. character
+	expect(model.canSubmitText(atLimit) and model.canSubmitText("  " .. atLimit .. "  "),
+		"The character limit counts normalized Unicode characters rather than UTF-8 bytes")
+	expect(model.addTask(notebook, atLimit).tasks[1].text == atLimit,
+		"A task exactly at the character limit is accepted intact")
+	expect(not model.canSubmitText(overLimit), "Reject text beyond the character limit")
+	rejects(function() model.addTask(notebook, overLimit) end, "Cannot add over-limit text")
+	rejects(function() model.editTask(third, 1, overLimit) end, "Cannot edit to over-limit text")
+end
+expect(third.tasks[1].text == "Extend the railway", "Rejected edits preserve the previous text")
+local legacy = model.newNotebook()
+local legacyText = string.rep("🚂", model.MAX_TEXT_LENGTH + 100)
+legacy.nextId = 2
+legacy.tasks = {{id = 1, text = legacyText, completed = false}}
+local loadedLegacy = model.readNotebook(assert(load("return " .. serialize(legacy)))())
+expect(loadedLegacy.tasks[1].text == legacyText, "Saved notes beyond the new limit remain readable and intact")
+local completedLegacy = model.setCompleted(loadedLegacy, 1, true)
+expect(model.readNotebook(completedLegacy).tasks[1].text == legacyText,
+	"Unrelated updates keep over-limit saved text intact")
+rejects(function() model.editTask(loadedLegacy, 1, legacyText) end,
+	"Editing an older long note requires reducing it to the new limit")
+expect(model.editTask(loadedLegacy, 1, "Shortened note").tasks[1].text == "Shortened note",
+	"Older notes can be edited down to fit the limit")
+expect(not model.canSubmitText("\255"), "Invalid UTF-8 is rejected before counting characters")
+rejects(function() model.addTask(notebook, "\255") end, "Cannot save invalid UTF-8")
 rejects(function() model.editTask(notebook, 99, "Test") end, "Reject missing task")
 rejects(function() model.moveTask(third, 1, "Sideways") end, "Reject unknown direction")
 for _, pointValue in ipairs({{x = 0, y = 0}, {y = 0, z = 0}, {x = 0, z = 0},

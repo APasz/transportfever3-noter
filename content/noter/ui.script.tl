@@ -9,6 +9,8 @@ local MOD_ID = getOwningModId()
 local WINDOW_ID = "noter.notebook"
 local WINDOW_INITIAL_X = 0.04
 local WINDOW_INITIAL_Y = 0.1
+local OPAQUE_WINDOW_OFF_INDEX = 1
+local OPAQUE_WINDOW_ON_INDEX = 2
 local JOIN_SCOPE = "Noter"
 local POINT_PICKER_TOOL = "NoterPointPicker"
 local LEFT_MOUSE_BUTTON = 0
@@ -21,6 +23,20 @@ local REORDER_ICONS <total> : {NoterModel.MoveDirection : string} = {
 	Down = "::/gui/component/table_arrow_down.tga",
 }
 local nextPickerId = 0
+
+local record ModParams
+	apasz_noter_opaque_window : integer | nil
+end
+
+local function readOpaqueWindow() : boolean
+	local raw = api.engine.config.getModParams()[MOD_ID]
+	if raw == nil then return false end
+	-- GUI configuration returns one-based option indices, not the mod.json numbers.
+	local value = (raw as ModParams).apasz_noter_opaque_window
+	if value == nil or value == OPAQUE_WINDOW_OFF_INDEX then return false end
+	if value == OPAQUE_WINDOW_ON_INDEX then return true end
+	return logger.fail("Invalid opaque-window parameter: " .. tostring(value))
+end
 
 local enum RowMode
 	"View"
@@ -37,9 +53,10 @@ local function label(text : string, class? : string) : TreeNodeId
 	return builtin.TextView{meta = {class = "font-scale-body, " .. (class or "")}, text = text}
 end
 
-local function horizontal(children : {TreeNodeId}) : TreeNodeId
+local function horizontal(children : {TreeNodeId}, fill? : boolean) : TreeNodeId
 	return builtin.BoxLayout{
-		meta = {class = "noter-line"}, orientation = builtin.type.Orientation.Horizontal, children = children,
+		meta = {class = fill and "noter-line, noter-fill-width" or "noter-line"},
+		orientation = builtin.type.Orientation.Horizontal, children = children,
 	}
 end
 
@@ -96,21 +113,25 @@ local TextEditor = react.RegisterRecipe("NoterTextEditor", function(params : Edi
 	end
 	local children = {
 		builtin.TextInputField(react.ref(input), {
-			meta = {class = "font-scale-body, " .. (params.clearAfterSubmit and "noter-input" or "noter-edit-input")},
+			meta = {
+				class = "font-scale-body, noter-input",
+				tooltip = lang_util.format(_("APASZ_NOTER_TEXT_LIMIT"), {count = lang_util.formatInt(model.MAX_TEXT_LENGTH)}),
+			},
 			value = draft:old(), placeholderText = _("APASZ_NOTER_ENTER_TASK"),
+			maxLength = math.max(model.MAX_TEXT_LENGTH, assert(model.characterCount(params.initialText))),
 			onTyping = function(text : string)
 				draftRef:set(text)
 				draft:set(text)
 			end,
 			onValueChange = submit,
 			acceptOnFocusLoss = false,
-			popFocusOnStopEditing = not params.clearAfterSubmit,
+			popFocusOnStopEditing = true,
 			onCancel = params.onCancel,
 		}),
 		button(params.submitLabel, function() submit(draftRef:get()) end, model.canSubmitText(draft:old())),
 	}
 	if params.onCancel then children[#children + 1] = button(_("APASZ_NOTER_CANCEL"), params.onCancel) end
-	return horizontal(children)
+	return horizontal(children, true)
 end)
 
 local record PickerRequest
@@ -202,6 +223,7 @@ local PointPicker = react.RegisterTool({
 
 local record TaskRowParams
 	task : NoterModel.Task
+	windowExpanded : boolean
 	selected : boolean
 	mode : RowMode
 	canMoveUp : boolean
@@ -216,8 +238,31 @@ local record TaskRowParams
 	onClearPoint : function()
 end
 
+local record TaskTextLayout
+	width : integer
+	style : StyleSheet
+end
+
 local TaskRow = react.RegisterRecipe("NoterTaskRow", function(params : TaskRowParams) : TreeNodeId
 	local task = params.task
+	local textButtonId = WINDOW_ID .. ".task." .. tostring(task.id)
+	local textButton = react.useNodeRef(builtin.Button)
+	local textLayout : ReactStateT<TaskTextLayout | nil> = react.useState(nil)
+	local latestLayout = react.useMirrorRef(textLayout)
+	-- Measure the stretching button, so wrapped text does not determine its own width.
+	react.onStep(function()
+		if not params.windowExpanded or params.mode == "Edit" or textButton:hasExpired() then return end
+		-- getSize returns viewport fractions; inline style dimensions use pixels.
+		local viewportWidth = api.gui.camera.getSize().x
+		local width = math.floor(api.gui.byId.getSize(textButtonId).x * viewportWidth + 0.5)
+		local previous = latestLayout:get()
+		if width <= 0 or (previous ~= nil and (previous as TaskTextLayout).width == width) then return end
+		local style = api.gui.StyleSheet.new()
+		style.size = api.type.Vec2f.new(width, -1)
+		local layout : TaskTextLayout = {width = width, style = style}
+		latestLayout:set(layout)
+		textLayout:set(layout)
+	end)
 	local pointButton : TreeNodeId | nil = nil
 	if task.point then
 		local point = task.point as NoterModel.Point
@@ -230,26 +275,31 @@ local TaskRow = react.RegisterRecipe("NoterTaskRow", function(params : TaskRowPa
 			onValueChange = function(value : integer) params.onCompleted(value == 1) end,
 		},
 		builtin.Component{
-			meta = {class = "iconlabelindicator-icon-size"}, layout = pointButton and horizontal{pointButton} or nil,
+			meta = {class = "noter-pin-slot"}, layout = pointButton and horizontal{pointButton} or nil,
 		},
 	}
 	if params.mode == "Edit" then
 		line[#line + 1] = TextEditor{
+			meta = {class = "noter-fill-width"},
 			initialText = task.text, submitLabel = _("APASZ_NOTER_SAVE"), clearAfterSubmit = false,
 			onSubmit = function(text : string) params.onText(text); params.onMode("View") end,
 			onCancel = function() params.onMode("View") end,
 		}
 	else
-		line[#line + 1] = builtin.Button{
-			meta = {class = "noter-task-button", tooltip = _("APASZ_NOTER_TASK_ACTIONS_TOOLTIP")},
+		local layout = textLayout:old()
+		line[#line + 1] = builtin.Button(react.ref(textButton), {
+			meta = {id = textButtonId, class = "noter-task-button", tooltip = _("APASZ_NOTER_TASK_ACTIONS_TOOLTIP")},
 			content = builtin.TextView{
-				meta = {class = "font-scale-body, noter-text"}, text = task.text, tooltipWhenClipped = task.text,
+				meta = {
+					class = "font-scale-body, noter-text",
+					styleSheet = params.windowExpanded and layout ~= nil and (layout as TaskTextLayout).style or nil,
+				}, text = task.text,
 			},
 			onClick = params.onToggle,
 			onDoubleClick = function() params.onMode("Edit") end,
-		}
+		})
 	end
-	local children = {horizontal(line)}
+	local children = {horizontal(line, true)}
 	if params.selected and params.mode ~= "Edit" then
 		local actions : {TreeNodeId}
 		if params.mode == "ConfirmDelete" then
@@ -284,10 +334,12 @@ local record WindowParams
 end
 
 local NotebookWindow = react.RegisterWrapperRecipe("NoterNotebookWindow", builtin.Window, function(params : WindowParams) : TreeNodeId
+	local opaqueWindow : ReactStateT<boolean> = react.useStateLazy(readOpaqueWindow)
 	local notebook = react.useStateLazy(function() : NoterModel.Notebook
 		return model.readNotebook(api.gui.game.getGuiSaveData(MOD_ID))
 	end)
 	local current = react.useMirrorRef(notebook)
+	local expanded : ReactStateT<boolean> = react.useState(false)
 	local interaction : ReactStateT<TaskInteraction | nil> = react.useState(nil)
 	local latestInteraction = react.useMirrorRef(interaction)
 	local picking : ReactStateT<boolean> = react.useState(false)
@@ -350,10 +402,12 @@ local NotebookWindow = react.RegisterWrapperRecipe("NoterNotebookWindow", builti
 		alive:set(false)
 		cancelPicker()
 	end)
+	local notebookValue = notebook:old()
+	local isExpanded = expanded:old()
 	local rows : {TreeNodeId} = {}
 	local completedHeading = false
 	local selection = interaction:old()
-	for _index, task in ipairs(model.visibleTasks(notebook:old())) do
+	for _index, task in ipairs(model.visibleTasks(notebookValue)) do
 		local selected = selection ~= nil and (selection as TaskInteraction).id == task.id
 		local rowMode : RowMode = selected and (selection as TaskInteraction).mode or "View"
 		local showActions = selected and rowMode == "View"
@@ -362,12 +416,12 @@ local NotebookWindow = react.RegisterWrapperRecipe("NoterNotebookWindow", builti
 			completedHeading = true
 		end
 		rows[#rows + 1] = TaskRow{
-			meta = {localKey = tostring(task.id)}, task = task, selected = selected,
-			mode = rowMode,
+			meta = {localKey = tostring(task.id), class = "noter-fill-width"}, task = task, selected = selected,
+			mode = rowMode, windowExpanded = isExpanded,
 			onToggle = function() toggleTask(task.id) end,
 			onMode = function(mode : RowMode) selectTask(task.id, mode) end,
-			canMoveUp = showActions and model.canMoveTask(notebook:old(), task.id, "Up"),
-			canMoveDown = showActions and model.canMoveTask(notebook:old(), task.id, "Down"),
+			canMoveUp = showActions and model.canMoveTask(notebookValue, task.id, "Up"),
+			canMoveDown = showActions and model.canMoveTask(notebookValue, task.id, "Down"),
 			onText = function(text : string) commit(model.editTask(current:get(), task.id, text)) end,
 			onCompleted = function(completed : boolean) commit(model.setCompleted(current:get(), task.id, completed)) end,
 			onMove = function(direction : NoterModel.MoveDirection) commit(model.moveTask(current:get(), task.id, direction)) end,
@@ -409,8 +463,12 @@ local NotebookWindow = react.RegisterWrapperRecipe("NoterNotebookWindow", builti
 		}
 	end
 	if #rows == 0 then rows[1] = label(_("APASZ_NOTER_EMPTY")) end
+	local title = lang_util.format(_("APASZ_NOTER_TITLE_REMAINING"), {
+		count = lang_util.formatInt(model.remainingTaskCount(notebookValue)),
+	})
 	local children = {
 		TextEditor{
+			meta = {class = "noter-fill-width"},
 			initialText = "", submitLabel = _("APASZ_NOTER_ADD"), clearAfterSubmit = true,
 			onSubmit = function(text : string)
 				local added = model.addTask(current:get(), text)
@@ -420,7 +478,7 @@ local NotebookWindow = react.RegisterWrapperRecipe("NoterNotebookWindow", builti
 		},
 		builtin.CheckBox{
 			label = _("APASZ_NOTER_HIDE_COMPLETED"),
-			value = notebook:old().hideCompleted and 1 or 0,
+			value = notebookValue.hideCompleted and 1 or 0,
 			onValueChange = function(value : integer)
 				commit(model.setPreferences(current:get(), value == 1, current:get().pinned))
 			end,
@@ -436,6 +494,7 @@ local NotebookWindow = react.RegisterWrapperRecipe("NoterNotebookWindow", builti
 		horizontalPolicy = builtin.type.ScrollBarPolicy.AlwaysOff,
 		verticalPolicy = builtin.type.ScrollBarPolicy.AsNeeded,
 		content = builtin.Component{
+			meta = {class = "noter-fill-width"},
 			layout = builtin.BoxLayout{
 				meta = {class = "noter-rows"}, orientation = builtin.type.Orientation.Vertical, children = rows,
 			},
@@ -444,13 +503,34 @@ local NotebookWindow = react.RegisterWrapperRecipe("NoterNotebookWindow", builti
 	children[#children + 1] = label(_("APASZ_NOTER_SAVE_HINT"), "noter-hint")
 	return builtin.Window{
 		id = WINDOW_ID,
-		title = lang_util.format(_("APASZ_NOTER_TITLE_REMAINING"), {count = lang_util.formatInt(model.remainingTaskCount(notebook:old()))}),
+		meta = {class = opaqueWindow:old() and "noter-opaque" or nil},
+		title = title,
 		closable = true, movable = true, pinnable = true,
-		pinned = notebook:old().pinned, initialX = WINDOW_INITIAL_X, initialY = WINDOW_INITIAL_Y,
+		expanded = isExpanded,
+		pinned = notebookValue.pinned, initialX = WINDOW_INITIAL_X, initialY = WINDOW_INITIAL_Y,
 		onClose = function() cancelPicker(); params.onClose() end,
 		onPinned = function(pinned : boolean)
 			commit(model.setPreferences(current:get(), current:get().hideCompleted, pinned))
 		end,
+		header = builtin.BoxLayout{
+			meta = {class = "noter-header"}, orientation = builtin.type.Orientation.Horizontal,
+			children = {
+				builtin.TextView{
+					meta = {class = "font-scale-title-3, noter-title"}, text = title, tooltipWhenClipped = title,
+				},
+				builtin.Button{
+					meta = {tooltip = isExpanded and _("APASZ_NOTER_NORMAL_SIZE") or _("APASZ_NOTER_EXPAND")},
+					content = builtin.ImageView{
+						meta = {class = "noter-icon"},
+						path = isExpanded and "::/gui/builtin/window/icons/symbol_minimize_18.tga"
+							or "::/gui/builtin/window/icons/symbol_maximize_18.tga",
+					},
+					onClick = function()
+						expanded:transform(function(value : boolean) : boolean return not value end)
+					end,
+				},
+			},
+		},
 		content = builtin.BoxLayout{
 			meta = {class = "noter-content"}, orientation = builtin.type.Orientation.Vertical, children = children,
 		},
