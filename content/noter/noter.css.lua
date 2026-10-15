@@ -25,7 +25,6 @@ function data()
 	add(scope .. "!noter-line", {innerSpacing = {6, 6}})
 	add(scope .. "!noter-text", {minSize = {500, -1}, maxSize = {500, -1}})
 	add(scope .. "!noter-task-button", {padding = {0, 0, 0, 0}, margin = {0, 0, 0, 0}})
-	add(scope .. "!noter-point-column", {size = {24, 24}})
 	add(scope .. "!noter-input", {minSize = {440, -1}, maxSize = {440, -1}})
 	add(scope .. "!noter-edit-input", {minSize = {320, -1}, maxSize = {320, -1}})
 	add(scope .. "!noter-icon", {size = {18, 18}})
@@ -37,6 +36,5 @@ function data()
 	add("R::NoterButton ToggleButton!noter-toolbar", {
 		size = {32, 32}, padding = {4, 4, 4, 4}, margin = {1, 1, 1, 1},
 	})
-	add("R::NoterButton ImageView!noter-toolbar-icon", {size = {24, 24}})
 	return result
 end

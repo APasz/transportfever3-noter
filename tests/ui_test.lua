@@ -438,12 +438,12 @@ expect(changePointContent[1].params.path == setPointContent[1].params.path
 	"Change point keeps the same pin icon and its own translated label")
 local linkedRow = taskRow(view, 2)
 local linkedLine = linkedRow.params.children[1].params.children
-expect(linkedLine[1].kind == "CheckBox" and linkedLine[2].params.meta.class == "noter-point-column"
+expect(linkedLine[1].kind == "CheckBox" and linkedLine[2].params.meta.class == "iconlabelindicator-icon-size"
 	and tooltipButton(linkedLine[2], "Go to map point")
 	and linkedLine[3].params.meta.class == "noter-task-button",
 	"The pin column is directly after the checkbox and before the task text")
 local unlinkedLine = taskRow(view, 1).params.children[1].params.children
-expect(unlinkedLine[2].params.meta.class == "noter-point-column"
+expect(unlinkedLine[2].params.meta.class == "iconlabelindicator-icon-size"
 	and unlinkedLine[2].params.layout == nil,
 	"Unlinked tasks keep an empty pin column to align the text")
 local writesBeforeGo = writeCount
@@ -751,8 +751,10 @@ local scope = "Window#noter.notebook "
 expect(rules[scope .. "!noter-row"].borderWidth[4] > 0, "Task rows have a separator")
 expect(rules[scope .. "!noter-selected"].backgroundColor1[2] == palette.AccentMedium[2],
 	"Selection uses the active theme's accent colour")
-expect(rules[scope .. "!noter-point-column"].size[1] == 24,
-	"Linked and unlinked rows reserve the same fixed pin column width")
+local iconSlotClass = linkedLine[2].params.meta.class
+expect(iconSlotClass == "iconlabelindicator-icon-size"
+	and toolbarButton(root).params.content.params.meta.class == iconSlotClass,
+	"Pin columns and the toolbar icon share the game's built-in icon size")
 local completedColor = rules[scope .. "!noter-completed TextView!noter-text"].color
 expect(completedColor[1] == palette.NeutralLightest[1] and completedColor[4] < palette.NeutralLightest[4],
 	"Completed text is dimmed using the active theme")

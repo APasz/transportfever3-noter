@@ -230,7 +230,7 @@ local TaskRow = react.RegisterRecipe("NoterTaskRow", function(params : TaskRowPa
 			onValueChange = function(value : integer) params.onCompleted(value == 1) end,
 		},
 		builtin.Component{
-			meta = {class = "noter-point-column"}, layout = pointButton and horizontal{pointButton} or nil,
+			meta = {class = "iconlabelindicator-icon-size"}, layout = pointButton and horizontal{pointButton} or nil,
 		},
 	}
 	if params.mode == "Edit" then
@@ -491,7 +491,7 @@ local NoterButton = react.RegisterPluginRecipe(modButtons.MainModButtonAreaExten
 	return horizontal{
 		builtin.ToggleButton{
 			meta = {class = "extra, noter-toolbar", tooltip = _("APASZ_NOTER_TOOLBAR_TOOLTIP")},
-			content = builtin.ImageView{meta = {class = "noter-toolbar-icon"}, path = NOTE_ICON},
+			content = builtin.ImageView{meta = {class = "iconlabelindicator-icon-size"}, path = NOTE_ICON},
 			value = opened:old() and 1 or 0,
 			onValueChange = function(value : integer) setOpen(value == 1) end,
 		},
