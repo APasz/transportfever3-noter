@@ -73,7 +73,8 @@ strings.json translates all UI text for the 13 bundled game languages.
 Keys are prefixed APASZ_NOTER_ to avoid collisions with other mods. The title
 uses {count} and the game's locale-aware integer formatter. User notes stay
 as entered. Mod-list metadata is translated in _metadata/modinfo.json;
-description.html is a shared English description and overrides that text.
+description.html contains the authored English description, translations from
+that metadata, and the shared support footer; it overrides the metadata text.
 Restart the game after changing translation catalogues. Checks validate all
 keys, placeholders, mod parameter types and metadata, and exercise the UI
 in every language.
