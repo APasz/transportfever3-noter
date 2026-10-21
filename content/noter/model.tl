@@ -1,6 +1,7 @@
 local logger = ug_require "apasz_noter::/noter/logger.tl" as ModLogging.Logger
 local model : NoterModel = {MAX_TEXT_LENGTH = 500}
 local FORMAT_VERSION = 1
+local DEFAULT_WINDOW_LAYOUT : NoterModel.WindowLayout = {x = 0.04, y = 0.1, expanded = false}
 
 local function requireValid(condition : boolean, message : string)
 	if not condition then logger.fail(message) end
@@ -91,6 +92,14 @@ local function samePoint(left : NoterModel.Point | nil, right : NoterModel.Point
 	return first.x == second.x and first.y == second.y and first.z == second.z
 end
 
+local function requireWindowLayout(layout : NoterModel.WindowLayout)
+	requireValid(type(layout) == "table", "Window layout must be a table")
+	requireValid(isFiniteNumber(layout.x) and isFiniteNumber(layout.y), "Window position must contain finite coordinates")
+	requireValid(layout.x >= 0 and layout.x <= 1 and layout.y >= 0 and layout.y <= 1,
+		"Window position must be in screen fractions")
+	requireValid(type(layout.expanded) == "boolean", "Window expanded state must be a boolean")
+end
+
 function model.readNotebook(raw : table | nil) : NoterModel.Notebook
 	if raw == nil then
 		return model.newNotebook()
@@ -104,6 +113,7 @@ function model.readNotebook(raw : table | nil) : NoterModel.Notebook
 	requireValid(type(notebook.tasks) == "table", "Save is missing tasks")
 	requireValid(type(notebook.hideCompleted) == "boolean" and type(notebook.pinned) == "boolean",
 		"Save has invalid preferences")
+	if notebook.windowLayout ~= nil then requireWindowLayout(notebook.windowLayout) end
 	local seen : {integer : boolean} = {}
 	local count = 0
 	for key, rawTask in pairs(notebook.tasks as {any : any}) do
@@ -112,7 +122,6 @@ function model.readNotebook(raw : table | nil) : NoterModel.Notebook
 		requireValid(type(value) == "table", "Invalid task")
 		requireValid(isInteger(value.id) and value.id > 0 and value.id < notebook.nextId and not seen[value.id],
 			"Invalid or duplicate task ID")
-		-- Existing saves may contain notes written before the input limit was introduced.
 		requireValid(type(value.text) == "string" and taskTextLength(value.text) ~= nil, "Invalid task text")
 		requireValid(type(value.completed) == "boolean", "Invalid task completion state")
 		if value.point ~= nil then requirePoint(value.point) end
@@ -126,12 +135,18 @@ function model.readNotebook(raw : table | nil) : NoterModel.Notebook
 end
 
 local function copyNotebook(notebook : NoterModel.Notebook) : NoterModel.Notebook
-	local tasks : {NoterModel.Task} = {}
-	for _, task in ipairs(notebook.tasks) do tasks[#tasks + 1] = task end
 	return {
-		version = notebook.version, nextId = notebook.nextId, tasks = tasks,
+		version = notebook.version, nextId = notebook.nextId, tasks = notebook.tasks,
 		hideCompleted = notebook.hideCompleted, pinned = notebook.pinned,
+		windowLayout = notebook.windowLayout,
 	}
+end
+
+local function copyNotebookWithTasks(notebook : NoterModel.Notebook) : NoterModel.Notebook
+	local result = copyNotebook(notebook)
+	result.tasks = {}
+	for index, task in ipairs(notebook.tasks) do result.tasks[index] = task end
+	return result
 end
 
 local function taskIndex(notebook : NoterModel.Notebook, id : integer) : integer
@@ -152,7 +167,7 @@ local function updateTask(notebook : NoterModel.Notebook, id : integer,
 	if task.text == original.text and task.completed == original.completed and samePoint(task.point, original.point) then
 		return notebook
 	end
-	local result = copyNotebook(notebook)
+	local result = copyNotebookWithTasks(notebook)
 	result.tasks[index] = task
 	return result
 end
@@ -161,7 +176,7 @@ function model.addTask(notebook : NoterModel.Notebook, text : string) : NoterMod
 	local normalized = requireText(text)
 	local nextId = notebook.nextId + 1
 	requireValid(nextId > notebook.nextId, "Task ID sequence exhausted")
-	local result = copyNotebook(notebook)
+	local result = copyNotebookWithTasks(notebook)
 	result.tasks[#result.tasks + 1] = {id = result.nextId, text = normalized, completed = false}
 	result.nextId = nextId
 	return result
@@ -190,7 +205,7 @@ end
 
 function model.removeTask(notebook : NoterModel.Notebook, id : integer) : NoterModel.Notebook
 	local index = taskIndex(notebook, id)
-	local result = copyNotebook(notebook)
+	local result = copyNotebookWithTasks(notebook)
 	table.remove(result.tasks, index)
 	return result
 end
@@ -217,7 +232,7 @@ function model.moveTask(notebook : NoterModel.Notebook, id : integer,
 	if not target then return notebook end
 	local targetIndex = target as integer
 	local index = taskIndex(notebook, id)
-	local result = copyNotebook(notebook)
+	local result = copyNotebookWithTasks(notebook)
 	result.tasks[index], result.tasks[targetIndex] = result.tasks[targetIndex], result.tasks[index]
 	return result
 end
@@ -227,6 +242,19 @@ function model.setPreferences(notebook : NoterModel.Notebook, hideCompleted : bo
 	if notebook.hideCompleted == hideCompleted and notebook.pinned == pinned then return notebook end
 	local result = copyNotebook(notebook)
 	result.hideCompleted, result.pinned = hideCompleted, pinned
+	return result
+end
+
+function model.getWindowLayout(notebook : NoterModel.Notebook) : NoterModel.WindowLayout
+	return notebook.windowLayout or DEFAULT_WINDOW_LAYOUT
+end
+
+function model.setWindowLayout(notebook : NoterModel.Notebook, layout : NoterModel.WindowLayout) : NoterModel.Notebook
+	requireWindowLayout(layout)
+	local current = model.getWindowLayout(notebook)
+	if current.x == layout.x and current.y == layout.y and current.expanded == layout.expanded then return notebook end
+	local result = copyNotebook(notebook)
+	result.windowLayout = {x = layout.x, y = layout.y, expanded = layout.expanded}
 	return result
 end
 

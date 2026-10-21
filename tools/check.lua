@@ -53,6 +53,7 @@ for _, name in ipairs({"logging_config", "logger", "model"}) do
 	moduleCode["apasz_noter::/noter/" .. name .. ".tl"] = check("content/noter/" .. name .. ".tl")
 end
 local uiCode = check("content/noter/ui.script.tl")
+assert(loadfile(modRoot .. "/tests/picker_contract_test.lua"))(uiCode, assert(arg[5]))
 
 local function newRuntime(debugOverride)
 	local entries = {}

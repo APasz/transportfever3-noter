@@ -15,7 +15,7 @@ function data()
 	local textWidth = 500
 	local previewHeight = 80
 	local colors = api.gui.genericRep.get(api.gui.genericRep.find("::/gui/main/default_colors.gres")).data
-	add(windowSelector, {size = {width, -1}, minSize = {width, -1}, maxSize = {width, -1}})
+	add(windowSelector, {anchorPoint = {0, 0}, size = {width, -1}, minSize = {width, -1}, maxSize = {width, -1}})
 	add(windowSelector .. "!noter-opaque", {backgroundColor1 = colorUtil.withTransparencyRaw(colors.BaseDarkMedium, 1)})
 	add(expandedSelector, {size = {"75vw", "80vh"}, maxSize = {"90vw", "85vh"}})
 	add(expandedSelector .. " Window::Content", {gravity = {-1, -1}})

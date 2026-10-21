@@ -28,6 +28,11 @@ end
 
 local notebook = model.readNotebook({})
 expect(#notebook.tasks == 0 and notebook.nextId == 1, "Fresh notebook")
+local defaultLayout = model.getWindowLayout(notebook)
+expect(defaultLayout.x == 0.04 and defaultLayout.y == 0.1 and not defaultLayout.expanded,
+	"Fresh saves use the default window position and normal size")
+expect(model.setWindowLayout(notebook, defaultLayout) == notebook,
+	"An unchanged default window does not create saved preferences")
 expect(#model.readNotebook(nil).tasks == 0, "Missing mod save data initializes an empty notebook")
 rejects(function() model.readNotebook(false) end, "Non-table saved data is invalid")
 local first = model.addTask(notebook, "  Extend the railway  ")
@@ -59,6 +64,7 @@ expect(model.moveTask(reordered, 3, "Up") == reordered, "Boundary move leaves st
 local hidden = model.setPreferences(reordered, true, true)
 expect(model.remainingTaskCount(hidden) == 2, "Hiding completed tasks does not change the remaining count")
 expect(#model.visibleTasks(hidden) == 2 and hidden.pinned, "Saved filter and pin preferences")
+expect(hidden.tasks == reordered.tasks, "Preference updates reuse the unchanged task list")
 local point = {x = 25.5, y = -80, z = 4}
 local linked = model.setPoint(hidden, 1, point)
 point.x = 99
@@ -68,6 +74,28 @@ expect(model.setPoint(linked, 1, {x = 25.5, y = -80, z = 4}) == linked,
 local edited = model.editTask(linked, 1, "Extend both platforms")
 expect(edited.tasks[3].point.x == 25.5 and linked.tasks[3].text == "Extend the railway",
 	"Editing keeps the map point and previous text")
+local requestedLayout = {x = 0.2, y = 0.3, expanded = true}
+local positioned = model.setWindowLayout(edited, requestedLayout)
+requestedLayout.x = 0.8
+expect(model.getWindowLayout(positioned).x == 0.2 and edited.windowLayout == nil,
+	"Window updates copy their input and preserve the previous notebook")
+expect(positioned.tasks == edited.tasks, "Window layout updates reuse the unchanged task list")
+expect(model.setWindowLayout(positioned, {x = 0.2, y = 0.3, expanded = true}) == positioned,
+	"An unchanged saved layout is a no-op")
+for _, updated in ipairs({
+	model.addTask(positioned, "Another task"), model.editTask(positioned, 1, "Changed note"),
+	model.setCompleted(positioned, 1, true), model.setPoint(positioned, 1, nil),
+	model.moveTask(positioned, 1, "Up"), model.removeTask(positioned, 1),
+}) do
+	local layout = model.getWindowLayout(updated)
+	expect(layout.x == 0.2 and layout.y == 0.3 and layout.expanded,
+		"Notebook changes preserve the saved window layout")
+	expect(updated.tasks ~= positioned.tasks and #positioned.tasks == 3
+		and positioned.tasks[3].text == "Extend both platforms" and positioned.tasks[3].point ~= nil
+		and not positioned.tasks[3].completed, "Task updates preserve the list shared by earlier notebook states")
+end
+expect(model.setPreferences(positioned, false, false).windowLayout == positioned.windowLayout,
+	"Preference updates preserve the saved window layout")
 local cleared = model.setPoint(edited, 1, nil)
 expect(cleared.tasks[3].point == nil and edited.tasks[3].point ~= nil, "Clear map point")
 local removed = model.removeTask(cleared, 1)
@@ -86,9 +114,23 @@ local function serialize(value)
 	return "{" .. table.concat(entries, ",") .. "}"
 end
 
-local restored = model.readNotebook(assert(load("return " .. serialize(edited)))())
+local restored = model.readNotebook(assert(load("return " .. serialize(positioned)))())
 expect(restored.tasks[3].text == "Extend both platforms" and restored.tasks[3].point.y == -80
 	and restored.hideCompleted and restored.pinned, "Serializable save round-trip")
+local restoredLayout = model.getWindowLayout(restored)
+expect(restoredLayout.x == 0.2 and restoredLayout.y == 0.3 and restoredLayout.expanded,
+	"Window layout survives a save round-trip")
+expect(model.getWindowLayout(model.readNotebook(edited)).x == defaultLayout.x
+	and model.readNotebook(edited).windowLayout == nil,
+	"Older notebooks without layout data remain readable and use defaults")
+for _, layout in ipairs({false, {}, {x = 0.2, y = 0.3}, {x = 0.2, y = 0.3, expanded = "true"},
+	{x = 0/0, y = 0.3, expanded = false}, {x = 0.2, y = math.huge, expanded = false},
+	{x = -0.1, y = 0.3, expanded = false}, {x = 0.2, y = 1.1, expanded = false}}) do
+	rejects(function() model.setWindowLayout(notebook, layout) end, "Reject invalid window layout updates")
+	local invalidLayoutSave = model.newNotebook()
+	invalidLayoutSave.windowLayout = layout
+	rejects(function() model.readNotebook(invalidLayoutSave) end, "Reject invalid saved window layouts")
+end
 for _, text in ipairs({"", "  ", "a\nb", "a\rb", "a\0b"}) do
 	expect(not model.canSubmitText(text), "Reject blank or multiline task input")
 	rejects(function() model.addTask(notebook, text) end, "Reject invalid task text")

@@ -12,12 +12,19 @@ global record NoterModel
 		point : Point | nil
 	end
 
+	record WindowLayout
+		x : number
+		y : number
+		expanded : boolean
+	end
+
 	record Notebook
 		version : integer
 		nextId : integer
 		tasks : {Task}
 		hideCompleted : boolean
 		pinned : boolean
+		windowLayout : WindowLayout | nil
 	end
 
 	enum MoveDirection
@@ -39,6 +46,8 @@ global record NoterModel
 	canMoveTask : function(Notebook, integer, MoveDirection) : boolean
 	moveTask : function(Notebook, integer, MoveDirection) : Notebook
 	setPreferences : function(Notebook, boolean, boolean) : Notebook
+	getWindowLayout : function(Notebook) : WindowLayout
+	setWindowLayout : function(Notebook, WindowLayout) : Notebook
 	visibleTasks : function(Notebook) : {Task}
 	remainingTaskCount : function(Notebook) : integer
 end

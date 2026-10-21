@@ -1,8 +1,12 @@
 local runtime, uiCode, modRoot = ...
 local reorderChecks = 0
+local visibilityScans = 0
 local model = setmetatable({canMoveTask = function(...)
 	reorderChecks = reorderChecks + 1
 	return runtime.model.canMoveTask(...)
+end, visibleTasks = function(...)
+	visibilityScans = visibilityScans + 1
+	return runtime.model.visibleTasks(...)
 end}, {__index = runtime.model})
 local checks = 0
 local function expect(condition, message)
@@ -64,6 +68,11 @@ local flashes = {}
 local focusCount = 0
 local taskButtonWidth = 1600
 local viewportSize = {x = 2560, y = 1440}
+local windowPosition = {x = 0, y = 0}
+local movedWindowPosition
+local titleLaidOut = true
+local restrictedApi = false
+local geometryReads = 0
 local assignedStyleSizes = {}
 local styleAssignments = 0
 local windowApiAvailable = true
@@ -116,10 +125,20 @@ local react = {
 		ref:set(source:old())
 		return ref
 	end,
-	useNodeRef = function()
+	useNodeRef = function(nativeRecipe)
 		return hook(function()
 			return {
-				get = function() return {focus = function() focusCount = focusCount + 1 end} end,
+				get = function() return {
+					focus = function() focusCount = focusCount + 1 end,
+					getPosition = function(_, gravityX, gravityY)
+						assert(not restrictedApi, "API is currently restricted: getPosition")
+						geometryReads = geometryReads + 1
+						assert(builtinKinds[nativeRecipe] == "TextView", "Position tracking must read the rendered title")
+						if not titleLaidOut then return {x = 0, y = 0} end
+						return {x = windowPosition.x + (8 + gravityX * 300) / viewportSize.x,
+							y = windowPosition.y + (4 + gravityY * 24) / viewportSize.y}
+					end,
+				} end,
 				hasExpired = function() return false end,
 			}
 		end)
@@ -127,6 +146,16 @@ local react = {
 	ref = function(ref) return {nodeRef = ref} end,
 	onMount = function(fn) context.mount[#context.mount + 1] = fn end,
 	onStep = function(fn) context.step[#context.step + 1] = fn end,
+	onStepTimer = function(fn, interval)
+		assert(interval > 0, "Window position polling needs a positive interval")
+		context.timers[#context.timers + 1] = function()
+			local previous = restrictedApi
+			restrictedApi = true
+			local ok, failure = pcall(fn)
+			restrictedApi = previous
+			if not ok then error(failure, 0) end
+		end
+	end,
 	onMouseEvent = function(fn) context.mouseEvents[#context.mouseEvents + 1] = fn end,
 	onUnmount = function(fn) context.unmount[#context.unmount + 1] = fn end,
 	enqueueJoin = function(fn) joins[#joins + 1] = fn end,
@@ -155,13 +184,16 @@ for _, name in ipairs({"TextView", "ImageView", "Button", "BoxLayout", "Componen
 	builtins[name] = function(first, second) return {kind = name, params = second or first} end
 	builtinKinds[builtins[name]] = name
 end
+-- Tool callbacks run inside the native ActionFn lifecycle context.
+builtins.ActionFn = recipe("ActionFn", function(params) return params.fn() end, "ActionDescriptor")
 
 local windows = {
 	addSingletonWindow = function(windowRecipe, params)
 		assert(windowRecipe.wrappedKind == "Window", "Window container needs a native window wrapper")
 		window = windowRecipe(params)
+		windowPosition = movedWindowPosition or {x = params.initialX, y = params.initialY}
 	end,
-	removeAllWindows = function() window = nil end,
+	removeAllWindows = function() movedWindowPosition = copy(windowPosition); window = nil end,
 	moveSingletonWindowToFront = function() end,
 }
 
@@ -224,12 +256,18 @@ local environment = setmetatable({
 			game = {
 				getGuiSaveData = function(modId) return copy(saves[saveId][modId] or {}) end,
 				setGuiSaveData = function(modId, value)
+					assert(not restrictedApi, "Save data writes require the main thread")
 					saves[saveId][modId] = copy(value)
 					writeCount = writeCount + 1
 				end,
 			},
 			byId = {
 				setVisible = function() end,
+				resetMovedWindowPosition = function(id)
+					assert(id == "noter.notebook" and window, "Reset position after the window mounts")
+					windowPosition = {x = window.params.initialX, y = window.params.initialY}
+					movedWindowPosition = nil
+				end,
 				getSize = function(id)
 					assert(id:match("^noter%.notebook%.task%.%d+$"), "Only task buttons need width measurements")
 					return {x = taskButtonWidth / viewportSize.x, y = 24 / viewportSize.y}
@@ -250,7 +288,10 @@ local environment = setmetatable({
 			mouse = {hasTerrainPosition = function() return terrainAvailable end,
 				getTerrainPosition = function() return terrainPoint end,
 				Event = {Type = {Clicked = "Clicked", DoubleClicked = "DoubleClicked"}}},
-			camera = {getSize = function() return viewportSize end,
+			camera = {getSize = function()
+				assert(not restrictedApi, "API is currently restricted: camera.getSize")
+				return viewportSize
+			end,
 				getCameraData = function() return {z = 700} end,
 				setManualCamera = function(center, distance) located = {center = center, distance = distance} end},
 		},
@@ -275,6 +316,7 @@ local function resolve(node, path, visited, hasActionDescriptor)
 		visited[key] = true
 		instance.cursor, instance.unmount, instance.inputActions, instance.mount, instance.mouseEvents = 0, {}, {}, {}, {}
 		instance.step = {}
+		instance.timers = {}
 		local previousContext = context
 		context = instance
 		local result = node.recipe.fn(node.params)
@@ -335,7 +377,7 @@ local function render()
 	local visited = {}
 	local root = resolve(toolbar, "toolbar", visited)
 	local notebookWindow = window and resolve(window, "window", visited)
-	local action = tool and resolve(tool.action(), "tool/" .. tool.key, visited)
+	local action = tool and resolve(builtins.ActionFn{fn = tool.action}, "tool/" .. tool.key, visited)
 	if action then assert(action.kind == "ActionDescriptor", "Tool actions must return an action descriptor") end
 	local selector = find(action, function(node) return node.kind == "Selector" end)
 	local removed = {}
@@ -346,6 +388,17 @@ local function render()
 	for _, instance in pairs(instances) do for _, fn in ipairs(instance.step) do fn() end end
 	flush()
 	return root, notebookWindow, selector, action
+end
+
+local function scheduleWindowLayoutPoll()
+	for _, instance in pairs(instances) do
+		for _, fn in ipairs(instance.timers) do fn() end
+	end
+end
+
+local function pollWindowLayout()
+	scheduleWindowLayoutPoll()
+	flush()
 end
 
 local function getButton(root, text)
@@ -417,12 +470,37 @@ expect(view.params.initialX == 0.04 and view.params.initialY == 0.1,
 expect(view.params.title == "Noter · 0 remaining" and focusCount == 1,
 	"Opening focuses the composer and shows the remaining count")
 expect(view.params.expanded == false, "Notebook opens at normal size")
+local readsBeforeTimer = geometryReads
+local writesBeforeTimer = writeCount
+scheduleWindowLayoutPoll()
+expect(geometryReads == readsBeforeTimer and writeCount == writesBeforeTimer,
+	"Restricted timer callbacks queue window polling without reading GUI geometry or writing save data")
+flush()
+expect(geometryReads > readsBeforeTimer, "Queued window polling reads geometry on the main thread")
 expect(view.params.meta.class == nil, "Missing mod parameters preserve the native window transparency")
 local writesBeforeNoop = writeCount
 view.params.onPinned(false)
 local hide = assert(find(view, function(node) return node.kind == "CheckBox" and node.params.label == "Hide completed" end))
 hide.params.onValueChange(0)
 expect(writeCount == writesBeforeNoop, "Unchanged native preference events do not dirty the save")
+pollWindowLayout()
+expect(writeCount == writesBeforeNoop and notebook().windowLayout == nil,
+	"An unchanged default window does not create save data")
+windowPosition = {x = 0.16, y = 0.22}
+titleLaidOut = false
+pollWindowLayout()
+expect(writeCount == writesBeforeNoop, "Empty title bounds are ignored before layout")
+titleLaidOut = true
+pollWindowLayout()
+local rememberedLayout = model.getWindowLayout(notebook())
+expect(math.abs(rememberedLayout.x - 0.16) < 0.000001 and math.abs(rememberedLayout.y - 0.22) < 0.000001,
+	"Dragging stores the window anchor rather than the title's offset")
+local writesAfterMove = writeCount
+pollWindowLayout()
+windowPosition.x = windowPosition.x + 0.25 / viewportSize.x
+pollWindowLayout()
+expect(writeCount == writesAfterMove, "Stationary windows and subpixel noise do not rewrite save data")
+windowPosition = {x = rememberedLayout.x, y = rememberedLayout.y}
 local input = assert(find(view, function(node) return node.kind == "TextInputField" end))
 expect(input.params.maxLength == model.MAX_TEXT_LENGTH, "The composer uses the shared character limit")
 local writesBeforeInvalidInput = writeCount
@@ -449,8 +527,9 @@ expect(view.params.expanded and input.params.value == "Draft while resizing" and
 tooltipButton(view.params.header, "Restore normal size").params.onClick()
 _, view = render()
 input = assert(find(view, function(node) return node.kind == "TextInputField" end))
-expect(not view.params.expanded and input.params.value == "Draft while resizing" and writeCount == writesBeforeResize,
-	"Restoring normal size preserves the draft without changing save data")
+expect(not view.params.expanded and input.params.value == "Draft while resizing" and writeCount == writesBeforeResize + 2
+	and not model.getWindowLayout(notebook()).expanded,
+	"Changing size preserves the draft and saves each accepted size choice")
 local longTaskText = string.rep("A long task with many words to wrap ", 12) .. "end."
 input.params.onTyping(longTaskText)
 findButton(view, "Add").params.onClick()
@@ -504,10 +583,12 @@ expect(assignedStyleSizes[collapsedExpandedText.params.meta.styleSheet].x == tas
 	"Collapsed notes also use the current expanded width while keeping their actions hidden")
 clickTask(view, 1)
 _, view = render()
+local scansBeforeResize = visibilityScans
 tooltipButton(view, "Restore normal size").params.onClick()
+expect(visibilityScans == scansBeforeResize, "Window layout changes do not rescan unchanged task visibility")
 _, view = render()
 expect(taskButton(view, 1).params.content.params.meta.styleSheet == nil and getButton(taskRow(view, 1), "Edit")
-	and writeCount == writesBeforePreview and focusCount == 1,
+	and writeCount == writesBeforePreview + 2 and focusCount == 1,
 	"Restoring normal size removes the expanded width while preserving selection, notes and focus")
 input = assert(find(view, function(node) return node.kind == "TextInputField" end))
 expect(input.params.value == "", "Composer clears after adding")
@@ -523,8 +604,10 @@ local complete = assert(find(view, function(node)
 	return node.kind == "CheckBox" and node.params.meta and node.params.meta.tooltip == "Mark complete"
 end))
 complete.params.onValueChange(1)
+local scansBeforePin = visibilityScans
 view.params.onPinned(true)
 expect(notebook().tasks[1].completed and notebook().pinned, "Same-frame writes do not overwrite one another")
+expect(visibilityScans == scansBeforePin, "Pin changes do not rescan unchanged task visibility")
 local writesBeforeRepeatedCompletion = writeCount
 complete.params.onValueChange(1)
 expect(writeCount == writesBeforeRepeatedCompletion, "Repeated completion events do not rewrite GUI save data")
@@ -614,8 +697,10 @@ expect(getButton(taskRow(view, 1), "Edit") and not getButton(taskRow(view, 2), "
 findButton(view, "Set point").params.onClick()
 flush()
 _, view, selector = render()
-selector.params.onProcessMouseEvent({type = "Clicked", button = 2})
+expect(selector.params.onProcessMouseEvent({type = "Clicked", button = 2}), "An active picker consumes right-click cancellation")
 expect(not selector.params.onSelect(1, {}, {}), "Canceled picker ignores further selection in the same frame")
+expect(not selector.params.onProcessMouseEvent({type = "Clicked", button = 2}),
+	"A canceled picker leaves subsequent right-clicks available to the restored tool")
 flush()
 expect(tool == nil and notebook().tasks[1].point == nil, "Right-click cancels without attaching a point")
 expect(#flashes == 2, "Canceling does not flash a point")
@@ -811,6 +896,7 @@ flush()
 _, view = render()
 clickTask(view, 2)
 _, view = render()
+windowPosition = {x = 0.28, y = 0.24}
 view.params.onClose()
 flush()
 root = render()
@@ -820,7 +906,10 @@ toolbarButton(root).params.onValueChange(1)
 flush()
 _, view = render()
 expect(focusCount == focusBeforeReopen + 1, "Reopening the notebook requests text focus once")
-expect(view.params.expanded == false, "Reopening resets the window to normal size")
+expect(view.params.expanded and model.getWindowLayout(notebook()).expanded,
+	"Reopening restores the saved expanded size")
+expect(math.abs(view.params.initialX - 0.28) < 0.000001 and math.abs(view.params.initialY - 0.24) < 0.000001,
+	"Closing captures the latest position before the next poll")
 expect(notebook().tasks[1].text == "Upgrade both platforms" and view.params.pinned,
 	"Close/reopen restores notebook and pin preference")
 expect(not getButton(view, "Edit"), "Reopening begins with compact, unselected rows")
@@ -836,12 +925,64 @@ expect(not selector.params.onSelect(1, {}, {}) and writeCount == writesBeforeClo
 flush()
 render()
 expect(tool == nil, "Closing cancels the map picker")
+root = render()
+toolbarButton(root).params.onValueChange(1)
+flush()
+_, view = render()
+windowPosition = {x = 0.36, y = 0.32}
+scheduleWindowLayoutPoll()
+toolbarButton(root).params.onValueChange(0)
+flush()
+root = render()
+expect(math.abs(model.getWindowLayout(notebook()).x - 0.36) < 0.000001,
+	"Closing through the toolbar also captures the latest position")
+-- Recreate all hook state, as on a UI reload or a new game session.
+instances = {}
+toolbar = exports.NoterButton()
+root = render()
+toolbarButton(root).params.onValueChange(1)
+flush()
+_, view = render()
+expect(view.params.expanded and math.abs(view.params.initialX - 0.36) < 0.000001
+	and math.abs(view.params.initialY - 0.32) < 0.000001,
+	"Saved window layout survives recreation of the entire UI runtime")
+local lateLayoutPoll
+for _, instance in pairs(instances) do lateLayoutPoll = lateLayoutPoll or instance.timers[1] end
+assert(lateLayoutPoll, "Window position must be polled while open")
+view.params.onClose()
+flush()
+root = render()
 saveId = "second"
 root = render()
 toolbarButton(root).params.onValueChange(1)
 flush()
 _, view = render()
 expect(#notebook().tasks == 0 and #saves.first.apasz_noter.tasks == 1, "Saves have independent notebooks")
+expect(not view.params.expanded and view.params.initialX == 0.04 and view.params.initialY == 0.1
+	and windowPosition.x == 0.04 and windowPosition.y == 0.1 and notebook().windowLayout == nil,
+	"A fresh save starts at the default size and position despite the previous save's moved window")
+local writesBeforeLateLayoutPoll = writeCount
+lateLayoutPoll()
+flush()
+expect(writeCount == writesBeforeLateLayoutPoll and notebook().windowLayout == nil,
+	"Late layout callbacks from an old window cannot write into the newly loaded save")
+view.params.onClose()
+flush()
+root = render()
+saveId = "first"
+toolbarButton(root).params.onValueChange(1)
+flush()
+_, view = render()
+expect(view.params.expanded and math.abs(view.params.initialX - 0.36) < 0.000001
+	and math.abs(view.params.initialY - 0.32) < 0.000001,
+	"Returning to an existing save restores its own layout")
+view.params.onClose()
+flush()
+root = render()
+saveId = "second"
+toolbarButton(root).params.onValueChange(1)
+flush()
+_, view = render()
 
 if runtime.debugLoggingEnabled then
 	local messages = {}
@@ -931,16 +1072,20 @@ for _, case in ipairs({
 	flush()
 	_, view = render()
 	local expectedClass = case.opaque and "noter-opaque" or nil
+	local writesBeforeOpaqueRender = writeCount
 	expect(view.params.meta.class == expectedClass, case.name .. ": normal window uses the requested appearance")
 	tooltipButton(view, "Expand window").params.onClick()
 	_, view = render()
 	expect(view.params.expanded and view.params.meta.class == expectedClass,
 		case.name .. ": expanded window uses the requested appearance")
+	tooltipButton(view, "Restore normal size").params.onClick()
+	_, view = render()
+	expect(writeCount == writesBeforeOpaqueRender + 2, "Only size changes are saved when checking window appearance")
 	view.params.onClose()
 	flush()
 	root = render()
 end
-expect(writeCount == writesBeforeAppearance, "Window appearance is independent of notebook save data")
+expect(writeCount == writesBeforeAppearance + 6, "Window appearance changes do not add writes beyond the six size choices")
 modParams = {}
 saveId = "legacy"
 local legacyText = string.rep("🚂", model.MAX_TEXT_LENGTH + 100)

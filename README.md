@@ -32,13 +32,16 @@ Set point and Change point show a pin icon alongside their translated labels.
 Point picking temporarily shelves the current game/mod tool and restores it
 when finished; Unlink also cancels a pending point change.
 
-The window opens 4% from the left and 10% from the top, matching UI Tweaks.
-It is movable and pinnable. The pin and Hide completed preferences
-are stored with the notebook. The window starts closed when loading a game.
+On a fresh save, the window opens at normal size, 4% from the left and 10%
+from the top, matching UI Tweaks. It is movable and pinnable. Its position,
+normal/expanded size, pin and Hide completed preferences are stored with the
+notebook. Reopening restores the saved layout. Save the game to keep it across
+sessions; a fresh save starts with the defaults. The window starts closed
+when loading a game.
 The expand icon in the title bar switches between normal and expanded
 sizes, giving the scrolling list more room. Expanded notes use the available
 row width; selected previews keep their height cap. Switching sizes preserves
-drafts and task selection; reopening the notebook starts at normal size.
+drafts and task selection.
 
 In Noter's mod parameters, enable **Opaque window** for a solid window
 background. It is off by default, keeping the current transparency.
@@ -66,8 +69,22 @@ under `build/`.
 
 Checks use the game's bundled Teal compiler, validate against the installed
 API definitions, and run notebook and UI interaction tests under Lua 5.3.
+Picker contract tests use the bundled React implementation to check both load
+orders with an ActionDescriptor wrapper like Better Bus Overlay's.
 The mod runs in these tests without the `utf8` global, matching the game.
 Python and lua5.3 are required; no additional packages are needed.
+
+Window-position polling previously raised `API is currently restricted` from
+`getPosition`: React runs `onStepTimer` callbacks as deferred steps with restricted
+API access. Queue geometry reads and GUI save-data writes through `enqueueJoin`
+so they run on the main thread. UI tests enforce this restriction and check that
+callbacks from a closed window cannot write into a newly loaded save.
+
+Better Bus Overlay revision 9 replaces `builtin.ActionDescriptor` with an
+unregistered Lua function. Registering a wrapper recipe around that function
+loses the native descriptor metadata and can crash Set point with
+`descriptorNodeId.has_value()`. Build the descriptor directly inside the tool's
+native `ActionFn` context; the picker contract tests cover both mod load orders.
 
 strings.json translates all UI text for the 13 bundled game languages.
 Keys are prefixed APASZ_NOTER_ to avoid collisions with other mods. The title
@@ -95,7 +112,10 @@ Manual regression checks:
 - Pick a map point over empty ground and over a construction; try the pin.
 - Cancel picking with Escape, right-click, window close and another tool.
 - Check that point picking restores an existing construction or mod tool.
+- Check Set point, Change point and cancellation with Better Bus Overlay enabled.
 - Check window layout, pin behavior and scrolling at your usual UI scale.
+- Move and expand the window, close it with the X and toolbar, then reopen;
+  save and reload to check persistence, and start a fresh save to check defaults.
 - Expand and restore with an empty list, a long list and a draft edit;
   check collapsed clipping, selected previews, scrolling and window placement
   at each UI scale.
