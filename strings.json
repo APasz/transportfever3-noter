@@ -31,7 +31,11 @@
         "APASZ_NOTER_OPAQUE_WINDOW": "Opaque window",
         "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Use a solid notebook background instead of transparency.",
         "APASZ_NOTER_OFF": "Off",
-        "APASZ_NOTER_ON": "On"
+        "APASZ_NOTER_ON": "On",
+        "APASZ_NOTER_REMEMBER": "Remember",
+        "APASZ_NOTER_REMEMBER_TOOLTIP": "Ephemeral resets size and position on close. Remembered saves the normal position and expanded/normal state, but not the expanded position. Notes are always saved.",
+        "APASZ_NOTER_REMEMBER_EPHEMERAL": "Ephemeral",
+        "APASZ_NOTER_REMEMBER_REMEMBERED": "Remembered"
     },
     "de": {
         "APASZ_NOTER_ENTER_TASK": "Aufgabe eingeben",
@@ -65,7 +69,11 @@
         "APASZ_NOTER_OPAQUE_WINDOW": "Undurchsichtiges Fenster",
         "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Verwendet einen undurchsichtigen Hintergrund für das Notizbuch.",
         "APASZ_NOTER_OFF": "Aus",
-        "APASZ_NOTER_ON": "Ein"
+        "APASZ_NOTER_ON": "Ein",
+        "APASZ_NOTER_REMEMBER": "Merken",
+        "APASZ_NOTER_REMEMBER_TOOLTIP": "Flüchtig setzt Größe und Position beim Schließen zurück. Gespeichert merkt sich die Position in Normalgröße und den Fensterzustand, aber nicht die Position des vergrößerten Fensters. Notizen werden immer gespeichert.",
+        "APASZ_NOTER_REMEMBER_EPHEMERAL": "Flüchtig",
+        "APASZ_NOTER_REMEMBER_REMEMBERED": "Gespeichert"
     },
     "es": {
         "APASZ_NOTER_ENTER_TASK": "Introduce una tarea",
@@ -99,7 +107,11 @@
         "APASZ_NOTER_OPAQUE_WINDOW": "Ventana opaca",
         "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Usa un fondo opaco para el cuaderno en lugar de transparencia.",
         "APASZ_NOTER_OFF": "Desactivado",
-        "APASZ_NOTER_ON": "Activado"
+        "APASZ_NOTER_ON": "Activado",
+        "APASZ_NOTER_REMEMBER": "Recordar",
+        "APASZ_NOTER_REMEMBER_TOOLTIP": "Efímero restablece el tamaño y la posición al cerrar. Recordado guarda la posición normal y el estado normal o ampliado, pero no la posición ampliada. Las notas siempre se guardan.",
+        "APASZ_NOTER_REMEMBER_EPHEMERAL": "Efímero",
+        "APASZ_NOTER_REMEMBER_REMEMBERED": "Recordado"
     },
     "fr": {
         "APASZ_NOTER_ENTER_TASK": "Saisissez une tâche",
@@ -133,7 +145,11 @@
         "APASZ_NOTER_OPAQUE_WINDOW": "Fenêtre opaque",
         "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Utilise un fond opaque pour le carnet au lieu de la transparence.",
         "APASZ_NOTER_OFF": "Désactivé",
-        "APASZ_NOTER_ON": "Activé"
+        "APASZ_NOTER_ON": "Activé",
+        "APASZ_NOTER_REMEMBER": "Mémoriser",
+        "APASZ_NOTER_REMEMBER_TOOLTIP": "Éphémère réinitialise la taille et la position à la fermeture. Mémorisé enregistre la position normale et l’état normal ou agrandi, mais pas la position agrandie. Les notes sont toujours enregistrées.",
+        "APASZ_NOTER_REMEMBER_EPHEMERAL": "Éphémère",
+        "APASZ_NOTER_REMEMBER_REMEMBERED": "Mémorisé"
     },
     "it": {
         "APASZ_NOTER_ENTER_TASK": "Inserisci un'attività",
@@ -167,7 +183,11 @@
         "APASZ_NOTER_OPAQUE_WINDOW": "Finestra opaca",
         "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Usa uno sfondo opaco per il taccuino anziché trasparente.",
         "APASZ_NOTER_OFF": "Disattivato",
-        "APASZ_NOTER_ON": "Attivato"
+        "APASZ_NOTER_ON": "Attivato",
+        "APASZ_NOTER_REMEMBER": "Ricorda",
+        "APASZ_NOTER_REMEMBER_TOOLTIP": "Temporaneo ripristina dimensioni e posizione alla chiusura. Memorizzato salva la posizione normale e lo stato normale o ingrandito, ma non la posizione ingrandita. Le note vengono sempre salvate.",
+        "APASZ_NOTER_REMEMBER_EPHEMERAL": "Temporaneo",
+        "APASZ_NOTER_REMEMBER_REMEMBERED": "Memorizzato"
     },
     "ja": {
         "APASZ_NOTER_ENTER_TASK": "タスクを入力",
@@ -201,7 +221,11 @@
         "APASZ_NOTER_OPAQUE_WINDOW": "ウィンドウを不透明にする",
         "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "ノートの背景を透明ではなく不透明にします。",
         "APASZ_NOTER_OFF": "オフ",
-        "APASZ_NOTER_ON": "オン"
+        "APASZ_NOTER_ON": "オン",
+        "APASZ_NOTER_REMEMBER": "ウィンドウを記憶",
+        "APASZ_NOTER_REMEMBER_TOOLTIP": "「一時的」は閉じるとサイズと位置をリセットします。「記憶する」は通常時の位置と通常・拡大の状態を保存します。拡大時の位置は保存しません。メモは常に保存されます。",
+        "APASZ_NOTER_REMEMBER_EPHEMERAL": "一時的",
+        "APASZ_NOTER_REMEMBER_REMEMBERED": "記憶する"
     },
     "ko": {
         "APASZ_NOTER_ENTER_TASK": "작업 입력",
@@ -235,7 +259,11 @@
         "APASZ_NOTER_OPAQUE_WINDOW": "불투명 창",
         "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "메모장 배경을 투명하지 않은 단색으로 표시합니다.",
         "APASZ_NOTER_OFF": "끄기",
-        "APASZ_NOTER_ON": "켜기"
+        "APASZ_NOTER_ON": "켜기",
+        "APASZ_NOTER_REMEMBER": "기억",
+        "APASZ_NOTER_REMEMBER_TOOLTIP": "임시는 닫을 때 크기와 위치를 초기화합니다. 기억은 일반 창의 위치와 일반/확대 상태를 저장하며, 확대 창의 위치는 저장하지 않습니다. 메모는 항상 저장됩니다.",
+        "APASZ_NOTER_REMEMBER_EPHEMERAL": "임시",
+        "APASZ_NOTER_REMEMBER_REMEMBERED": "기억"
     },
     "nl": {
         "APASZ_NOTER_ENTER_TASK": "Voer een taak in",
@@ -269,7 +297,11 @@
         "APASZ_NOTER_OPAQUE_WINDOW": "Ondoorzichtig venster",
         "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Gebruik een ondoorzichtige achtergrond voor het notitieboek.",
         "APASZ_NOTER_OFF": "Uit",
-        "APASZ_NOTER_ON": "Aan"
+        "APASZ_NOTER_ON": "Aan",
+        "APASZ_NOTER_REMEMBER": "Onthouden",
+        "APASZ_NOTER_REMEMBER_TOOLTIP": "Tijdelijk zet grootte en positie terug bij het sluiten. Onthouden bewaart de normale positie en de normale of vergrote vensterstand, maar niet de vergrote positie. Notities worden altijd opgeslagen.",
+        "APASZ_NOTER_REMEMBER_EPHEMERAL": "Tijdelijk",
+        "APASZ_NOTER_REMEMBER_REMEMBERED": "Onthouden"
     },
     "pl": {
         "APASZ_NOTER_ENTER_TASK": "Wpisz zadanie",
@@ -303,7 +335,11 @@
         "APASZ_NOTER_OPAQUE_WINDOW": "Nieprzezroczyste okno",
         "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Używa nieprzezroczystego tła notatnika zamiast przezroczystości.",
         "APASZ_NOTER_OFF": "Wyłączone",
-        "APASZ_NOTER_ON": "Włączone"
+        "APASZ_NOTER_ON": "Włączone",
+        "APASZ_NOTER_REMEMBER": "Zapamiętywanie",
+        "APASZ_NOTER_REMEMBER_TOOLTIP": "Tymczasowe resetuje rozmiar i położenie przy zamknięciu. Zapamiętane zapisuje położenie normalnego okna i stan normalny lub powiększony, ale nie położenie powiększonego okna. Notatki są zawsze zapisywane.",
+        "APASZ_NOTER_REMEMBER_EPHEMERAL": "Tymczasowe",
+        "APASZ_NOTER_REMEMBER_REMEMBERED": "Zapamiętane"
     },
     "pt_BR": {
         "APASZ_NOTER_ENTER_TASK": "Digite uma tarefa",
@@ -337,7 +373,11 @@
         "APASZ_NOTER_OPAQUE_WINDOW": "Janela opaca",
         "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Usa um fundo opaco para o bloco de notas em vez de transparência.",
         "APASZ_NOTER_OFF": "Desativado",
-        "APASZ_NOTER_ON": "Ativado"
+        "APASZ_NOTER_ON": "Ativado",
+        "APASZ_NOTER_REMEMBER": "Lembrar",
+        "APASZ_NOTER_REMEMBER_TOOLTIP": "Efêmero redefine tamanho e posição ao fechar. Lembrado salva a posição normal e o estado normal ou ampliado, mas não a posição ampliada. As notas são sempre salvas.",
+        "APASZ_NOTER_REMEMBER_EPHEMERAL": "Efêmero",
+        "APASZ_NOTER_REMEMBER_REMEMBERED": "Lembrado"
     },
     "ru": {
         "APASZ_NOTER_ENTER_TASK": "Введите задачу",
@@ -371,7 +411,11 @@
         "APASZ_NOTER_OPAQUE_WINDOW": "Непрозрачное окно",
         "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "Использовать непрозрачный фон блокнота вместо прозрачного.",
         "APASZ_NOTER_OFF": "Выкл.",
-        "APASZ_NOTER_ON": "Вкл."
+        "APASZ_NOTER_ON": "Вкл.",
+        "APASZ_NOTER_REMEMBER": "Запоминание",
+        "APASZ_NOTER_REMEMBER_TOOLTIP": "Временное сбрасывает размер и положение при закрытии. Запоминать сохраняет положение обычного окна и обычное или увеличенное состояние, но не положение увеличенного окна. Заметки сохраняются всегда.",
+        "APASZ_NOTER_REMEMBER_EPHEMERAL": "Временное",
+        "APASZ_NOTER_REMEMBER_REMEMBERED": "Запоминать"
     },
     "zh_CN": {
         "APASZ_NOTER_ENTER_TASK": "输入任务",
@@ -405,7 +449,11 @@
         "APASZ_NOTER_OPAQUE_WINDOW": "不透明窗口",
         "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "使用不透明的笔记本背景。",
         "APASZ_NOTER_OFF": "关闭",
-        "APASZ_NOTER_ON": "开启"
+        "APASZ_NOTER_ON": "开启",
+        "APASZ_NOTER_REMEMBER": "记住窗口",
+        "APASZ_NOTER_REMEMBER_TOOLTIP": "临时模式在关闭时重置大小和位置。记忆模式保存普通窗口的位置及普通或展开状态，但不保存展开窗口的位置。笔记始终会保存。",
+        "APASZ_NOTER_REMEMBER_EPHEMERAL": "临时",
+        "APASZ_NOTER_REMEMBER_REMEMBERED": "记忆"
     },
     "zh_TW": {
         "APASZ_NOTER_ENTER_TASK": "輸入任務",
@@ -439,6 +487,10 @@
         "APASZ_NOTER_OPAQUE_WINDOW": "不透明視窗",
         "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP": "使用不透明的筆記本背景。",
         "APASZ_NOTER_OFF": "關閉",
-        "APASZ_NOTER_ON": "開啟"
+        "APASZ_NOTER_ON": "開啟",
+        "APASZ_NOTER_REMEMBER": "記住視窗",
+        "APASZ_NOTER_REMEMBER_TOOLTIP": "暫時模式在關閉時重設大小和位置。記憶模式儲存一般視窗的位置及一般或展開狀態，但不儲存展開視窗的位置。筆記一律會儲存。",
+        "APASZ_NOTER_REMEMBER_EPHEMERAL": "暫時",
+        "APASZ_NOTER_REMEMBER_REMEMBERED": "記憶"
     }
 }

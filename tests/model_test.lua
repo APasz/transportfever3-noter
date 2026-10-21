@@ -123,9 +123,34 @@ expect(restoredLayout.x == 0.2 and restoredLayout.y == 0.3 and restoredLayout.ex
 expect(model.getWindowLayout(model.readNotebook(edited)).x == defaultLayout.x
 	and model.readNotebook(edited).windowLayout == nil,
 	"Older notebooks without layout data remain readable and use defaults")
+local outsideLayout = {x = -0.15, y = 1.05, expanded = true}
+local legacyOutside = model.setWindowLayout(edited, outsideLayout)
+local restoredOutside = model.readNotebook(assert(load("return " .. serialize(legacyOutside)))())
+expect(model.getWindowLayout(restoredOutside).x == -0.15
+	and model.getWindowLayout(restoredOutside).y == 1.05,
+	"Saved off-screen positions from the removed mode remain readable")
+local expandedLayout = model.getWindowLayout(legacyOutside, "Remembered")
+expect(expandedLayout.x == 0.5 and expandedLayout.y == 0.5 and expandedLayout.expanded
+	and legacyOutside.windowLayout.x == -0.15,
+	"Remembered opens expanded windows at the screen centre without changing the saved normal anchor")
+local normalOutside = model.setWindowLayout(legacyOutside, {x = -0.15, y = 1.05, expanded = false})
+local boundedLayout = model.getWindowLayout(normalOutside, "Remembered")
+expect(boundedLayout.x == 0 and boundedLayout.y == 1 and not boundedLayout.expanded,
+	"Remembered restores a bounded position for normal windows")
+local ephemeralLayout = model.getWindowLayout(legacyOutside, "Ephemeral")
+expect(ephemeralLayout.x == defaultLayout.x and ephemeralLayout.y == defaultLayout.y and not ephemeralLayout.expanded,
+	"Ephemeral ignores any saved window position and size")
+expect(model.setWindowLayout(legacyOutside, defaultLayout, "Ephemeral") == legacyOutside,
+	"Ephemeral never changes saved layout data")
+local bounded = model.setWindowLayout(edited, outsideLayout, "Remembered")
+expect(bounded.windowLayout.x == 0 and bounded.windowLayout.y == 1 and bounded.windowLayout.expanded,
+	"Remembered clamps captured anchors to screen fractions")
+rejects(function() model.getWindowLayout(legacyOutside, "Unknown") end,
+	"Invalid remember modes cannot silently use unbounded coordinates")
+rejects(function() model.setWindowLayout(edited, outsideLayout, "Unknown") end,
+	"Invalid remember modes cannot silently save unbounded coordinates")
 for _, layout in ipairs({false, {}, {x = 0.2, y = 0.3}, {x = 0.2, y = 0.3, expanded = "true"},
-	{x = 0/0, y = 0.3, expanded = false}, {x = 0.2, y = math.huge, expanded = false},
-	{x = -0.1, y = 0.3, expanded = false}, {x = 0.2, y = 1.1, expanded = false}}) do
+	{x = 0/0, y = 0.3, expanded = false}, {x = 0.2, y = math.huge, expanded = false}}) do
 	rejects(function() model.setWindowLayout(notebook, layout) end, "Reject invalid window layout updates")
 	local invalidLayoutSave = model.newNotebook()
 	invalidLayoutSave.windowLayout = layout

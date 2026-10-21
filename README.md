@@ -33,10 +33,19 @@ Point picking temporarily shelves the current game/mod tool and restores it
 when finished; Unlink also cancels a pending point change.
 
 On a fresh save, the window opens at normal size, 4% from the left and 10%
-from the top, matching UI Tweaks. It is movable and pinnable. Its position,
-normal/expanded size, pin and Hide completed preferences are stored with the
-notebook. Reopening restores the saved layout. Save the game to keep it across
-sessions; a fresh save starts with the defaults. The window starts closed
+from the top, matching UI Tweaks. It is movable and pinnable. Pin and Hide
+completed preferences are stored with the notebook. The **Remember** mod
+parameter controls position and normal/expanded size:
+
+- **Ephemeral** resets both when the window closes. Notes and other preferences
+  are still saved.
+- **Remembered** (default) saves the normal/expanded choice and the position
+  while normal, keeping that anchor within screen coordinates. Expanded windows
+  reopen centred on screen; their position is not saved.
+
+Save the game to keep remembered layouts across sessions; a fresh save starts
+with the defaults. Ephemeral ignores existing layout data without erasing it,
+so switching back to Remembered can restore it. The window starts closed
 when loading a game.
 The expand icon in the title bar switches between normal and expanded
 sizes, giving the scrolling list more room. Expanded notes use the available
@@ -79,6 +88,31 @@ Window-position polling previously raised `API is currently restricted` from
 API access. Queue geometry reads and GUI save-data writes through `enqueueJoin`
 so they run on the main thread. UI tests enforce this restriction and check that
 callbacks from a closed window cannot write into a newly loaded save.
+Each open request uses a distinct window key, so closing and reopening before
+the next render still resets temporary state. Deferred work and close callbacks
+check the request identity before acting on a window.
+
+Position capture uses the native `Window.onMovedChange` callback used in
+`gui/music_player/music_player.tl` and `gui/entity_window/view_manager.tl` in the
+game's `gui.zip`. The wiki and bundled Teal definitions omit this field. Movement
+notifications queue a capture through `enqueueJoin`; notifications before the
+join are coalesced. There is no polling timer. Debug traces distinguish
+`Window movement callback` from `Captured window position: x=..., y=...`.
+Tests cover repeated notifications and idle windows. Movement notifications were
+verified in-game, including after a full game restart.
+Normal position capture reads the native window's top-left bounds directly.
+Calibrating a title offset from the requested opening position introduced a bias
+when native placement adjusted that position. No startup calibration or frame
+callback is needed. Tests cover native repositioning, resolution changes and the
+first normal drag after reopening expanded.
+Transport Fever 3 repositions the native window when it reopens outside the
+viewport. Its documented window API does not expose an overflow control.
+Expanded windows also shifted vertically on their first reopening, including
+when sized through a custom CSS class instead of `Window.expanded`. Remembered
+therefore persists the normal/expanded flag, captures position only while normal,
+and centres expanded windows when reopening. Expanded movement and close
+events leave the saved normal anchor intact and do not read geometry. Tests cover
+both close controls, pending callbacks, size changes and a fresh UI runtime.
 
 Better Bus Overlay revision 9 replaces `builtin.ActionDescriptor` with an
 unregistered Lua function. Registering a wrapper recipe around that function
@@ -114,8 +148,17 @@ Manual regression checks:
 - Check that point picking restores an existing construction or mod tool.
 - Check Set point, Change point and cancellation with Better Bus Overlay enabled.
 - Check window layout, pin behavior and scrolling at your usual UI scale.
-- Move and expand the window, close it with the X and toolbar, then reopen;
-  save and reload to check persistence, and start a fresh save to check defaults.
+- Check both Remember modes through the mod list. Ephemeral must reset
+  size and position on close; notes, pin and Hide completed must still persist.
+- In Remembered, move the normal window and close it with the X and toolbar;
+  reopening must restore its position and normal state. Save and reload to check
+  persistence, and start a fresh save to check defaults.
+- Expand, move and reopen through both close controls. It must remain expanded
+  centred on screen; expanded movement must not overwrite the normal anchor.
+  Restore normal size and verify that position tracking resumes.
+- Drag twice, save with Noter still open, restart the game, and check the second
+  position. Closing or resizing before saving would independently capture the
+  position and mask missing movement notifications.
 - Expand and restore with an empty list, a long list and a draft edit;
   check collapsed clipping, selected previews, scrolling and window placement
   at each UI scale.

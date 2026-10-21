@@ -17,7 +17,10 @@ function data()
 	local colors = api.gui.genericRep.get(api.gui.genericRep.find("::/gui/main/default_colors.gres")).data
 	add(windowSelector, {anchorPoint = {0, 0}, size = {width, -1}, minSize = {width, -1}, maxSize = {width, -1}})
 	add(windowSelector .. "!noter-opaque", {backgroundColor1 = colorUtil.withTransparencyRaw(colors.BaseDarkMedium, 1)})
-	add(expandedSelector, {size = {"75vw", "80vh"}, maxSize = {"90vw", "85vh"}})
+	add(expandedSelector, {
+		anchorPoint = {0.5, 0.5}, gravity = {0.5, 0.5},
+		size = {"75vw", "80vh"}, maxSize = {"90vw", "85vh"},
+	})
 	add(expandedSelector .. " Window::Content", {gravity = {-1, -1}})
 	-- The native header precedes the title; our full-width header places resize beside the native controls.
 	add(scope .. "Window::Title, " .. scope .. "Window::TitleLayout > !title-scroll", {visibility = "none"})

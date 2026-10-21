@@ -18,6 +18,11 @@ global record NoterModel
 		expanded : boolean
 	end
 
+	enum RememberMode
+		"Ephemeral"
+		"Remembered"
+	end
+
 	record Notebook
 		version : integer
 		nextId : integer
@@ -46,8 +51,8 @@ global record NoterModel
 	canMoveTask : function(Notebook, integer, MoveDirection) : boolean
 	moveTask : function(Notebook, integer, MoveDirection) : Notebook
 	setPreferences : function(Notebook, boolean, boolean) : Notebook
-	getWindowLayout : function(Notebook) : WindowLayout
-	setWindowLayout : function(Notebook, WindowLayout) : Notebook
+	getWindowLayout : function(Notebook, ?RememberMode) : WindowLayout
+	setWindowLayout : function(Notebook, WindowLayout, ?RememberMode) : Notebook
 	visibleTasks : function(Notebook) : {Task}
 	remainingTaskCount : function(Notebook) : integer
 end

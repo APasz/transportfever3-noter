@@ -8,6 +8,17 @@
     "severityRemove": "Warning",
     "params": [
         {
+            "key": "apasz_noter_remember",
+            "name": "APASZ_NOTER_REMEMBER",
+            "tooltip": "APASZ_NOTER_REMEMBER_TOOLTIP",
+            "uiType": "ComboBox",
+            "values": [
+                "APASZ_NOTER_REMEMBER_EPHEMERAL",
+                "APASZ_NOTER_REMEMBER_REMEMBERED"
+            ],
+            "defaultIndex": 1
+        },
+        {
             "key": "apasz_noter_opaque_window",
             "name": "APASZ_NOTER_OPAQUE_WINDOW",
             "tooltip": "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP",
@@ -29,7 +40,7 @@
     "preRunScript": {
         "fileName": ""
     },
-    "revision": 3,
+    "revision": 4,
     "runScript": {
         "fileName": ""
     }

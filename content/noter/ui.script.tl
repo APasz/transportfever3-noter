@@ -7,7 +7,6 @@ local logger = ug_require "apasz_noter::/noter/logger.tl" as ModLogging.Logger
 
 local MOD_ID = getOwningModId()
 local WINDOW_ID = "noter.notebook"
-local WINDOW_POSITION_POLL_SECONDS = 0.25
 local WINDOW_POSITION_TOLERANCE_PIXELS = 1
 local OPAQUE_WINDOW_OFF_INDEX = 1
 local OPAQUE_WINDOW_ON_INDEX = 2
@@ -26,6 +25,21 @@ local nextPickerId = 0
 
 local record ModParams
 	apasz_noter_opaque_window : integer | nil
+	apasz_noter_remember : integer | nil
+end
+
+local REMEMBER_MODES : {integer : NoterModel.RememberMode} = {
+	[1] = "Ephemeral", [2] = "Remembered",
+}
+
+local function readRememberMode() : NoterModel.RememberMode
+	local raw = api.engine.config.getModParams()[MOD_ID]
+	if raw == nil then return "Remembered" end
+	local index = (raw as ModParams).apasz_noter_remember
+	if index == nil then return "Remembered" end
+	local mode = REMEMBER_MODES[index]
+	if mode == nil then return logger.fail("Invalid remember parameter: " .. tostring(index)) end
+	return mode
 end
 
 local function readOpaqueWindow() : boolean
@@ -333,6 +347,7 @@ local record WindowParams
 	isOpen : function() : boolean
 	initialX : number
 	initialY : number
+	rememberMode : NoterModel.RememberMode
 	captureLayout : ReactRefT<function() | nil>
 end
 
@@ -342,8 +357,10 @@ local NotebookWindow = react.RegisterWrapperRecipe("NoterNotebookWindow", builti
 		return model.readNotebook(api.gui.game.getGuiSaveData(MOD_ID))
 	end)
 	local current = react.useMirrorRef(notebook)
-	local titleRef = react.useNodeRef(builtin.TextView)
-	local titleOffset : ReactRefT<Vec2f | nil> = react.useRef(nil)
+	local ephemeralExpanded : ReactStateT<boolean> = react.useState(false)
+	local latestEphemeralExpanded = react.useMirrorRef(ephemeralExpanded)
+	local windowRef = react.useNodeRef(builtin.Window)
+	local layoutCaptureQueued = react.useRef(false)
 	local interaction : ReactStateT<TaskInteraction | nil> = react.useState(nil)
 	local latestInteraction = react.useMirrorRef(interaction)
 	local picking : ReactStateT<boolean> = react.useState(false)
@@ -403,41 +420,39 @@ local NotebookWindow = react.RegisterWrapperRecipe("NoterNotebookWindow", builti
 			end
 		end
 	end
+	local function remembersWindowPosition() : boolean
+		return params.rememberMode == "Remembered" and not model.getWindowLayout(current:get()).expanded
+	end
 	local function rememberWindowLayout()
-		if not alive:get() or not params.isOpen() or titleRef:hasExpired() or titleRef:get() == nil then return end
-		local title = titleRef:get()
-		local position = title:getPosition(0, 0)
-		local corner = title:getPosition(1, 1)
+		if not alive:get() or not params.isOpen() or not remembersWindowPosition() then return end
+		if windowRef:hasExpired() then return end
+		local window = windowRef:get()
+		if window == nil then return end
+		local position = window:getPosition(0, 0)
+		local corner = window:getPosition(1, 1)
 		if corner.x <= position.x or corner.y <= position.y then return end
 		local viewport = api.gui.camera.getSize()
 		if viewport.x <= 0 or viewport.y <= 0 then return end
-		local offset = titleOffset:get()
-		if offset == nil then
-			-- Pixel offsets stay stable when the viewport resolution changes.
-			titleOffset:set(api.type.Vec2f.new((position.x - params.initialX) * viewport.x,
-				(position.y - params.initialY) * viewport.y))
-			return
-		end
-		local x = math.max(0, math.min(1, position.x - (offset as Vec2f).x / viewport.x))
-		local y = math.max(0, math.min(1, position.y - (offset as Vec2f).y / viewport.y))
+		local x, y = position.x, position.y
 		local layout = model.getWindowLayout(current:get())
 		if math.abs(x - layout.x) * viewport.x < WINDOW_POSITION_TOLERANCE_PIXELS
 			and math.abs(y - layout.y) * viewport.y < WINDOW_POSITION_TOLERANCE_PIXELS then return end
-		commit(model.setWindowLayout(current:get(), {x = x, y = y, expanded = layout.expanded}))
+		local updated = model.setWindowLayout(current:get(), {x = x, y = y, expanded = layout.expanded}, params.rememberMode)
+		if updated == current:get() then return end
+		local saved = model.getWindowLayout(updated)
+		logger.debug(string.format("Captured window position: x=%.4f, y=%.4f", saved.x, saved.y))
+		commit(updated)
 	end
-	params.captureLayout:set(rememberWindowLayout)
+	params.captureLayout:set(remembersWindowPosition() and rememberWindowLayout or nil)
 	react.onMount(function() api.gui.byId.resetMovedWindowPosition(WINDOW_ID) end)
-	react.onStep(function() if titleOffset:get() == nil then rememberWindowLayout() end end)
-	react.onStepTimer(function()
-		react.enqueueJoin(rememberWindowLayout, JOIN_SCOPE)
-	end, WINDOW_POSITION_POLL_SECONDS, false)
 	react.onUnmount(function()
 		if params.captureLayout:get() == rememberWindowLayout then params.captureLayout:set(nil) end
 		alive:set(false)
 		cancelPicker()
 	end)
 	local notebookValue = notebook:old()
-	local isExpanded = model.getWindowLayout(notebookValue).expanded
+	local isExpanded = ephemeralExpanded:old()
+	if params.rememberMode ~= "Ephemeral" then isExpanded = model.getWindowLayout(notebookValue).expanded end
 	local rows : {TreeNodeId} = {}
 	local completedHeading = false
 	local selection = interaction:old()
@@ -535,7 +550,7 @@ local NotebookWindow = react.RegisterWrapperRecipe("NoterNotebookWindow", builti
 		},
 	}
 	children[#children + 1] = label(_("APASZ_NOTER_SAVE_HINT"), "noter-hint")
-	return builtin.Window{
+	return builtin.Window(react.ref(windowRef), {
 		id = WINDOW_ID,
 		meta = {class = opaqueWindow:old() and "noter-opaque" or nil},
 		title = title,
@@ -543,15 +558,27 @@ local NotebookWindow = react.RegisterWrapperRecipe("NoterNotebookWindow", builti
 		expanded = isExpanded,
 		pinned = notebookValue.pinned, initialX = params.initialX, initialY = params.initialY,
 		onClose = function() cancelPicker(); params.onClose() end,
+		-- Undocumented native callback, also used by vanilla music-player and entity windows.
+		onMovedChange = function()
+			if not alive:get() or not params.isOpen() or not remembersWindowPosition() then return end
+			logger.debug("Window movement callback")
+			if layoutCaptureQueued:get() then return end
+			layoutCaptureQueued:set(true)
+			react.enqueueJoin(function()
+				if not alive:get() or not params.isOpen() then return end
+				layoutCaptureQueued:set(false)
+				rememberWindowLayout()
+			end, JOIN_SCOPE)
+		end,
 		onPinned = function(pinned : boolean)
 			commit(model.setPreferences(current:get(), current:get().hideCompleted, pinned))
 		end,
 		header = builtin.BoxLayout{
 			meta = {class = "noter-header"}, orientation = builtin.type.Orientation.Horizontal,
 			children = {
-				builtin.TextView(react.ref(titleRef), {
+				builtin.TextView{
 					meta = {class = "font-scale-title-3, noter-title"}, text = title, tooltipWhenClipped = title,
-				}),
+				},
 				builtin.Button{
 					meta = {tooltip = isExpanded and _("APASZ_NOTER_NORMAL_SIZE") or _("APASZ_NOTER_EXPAND")},
 					content = builtin.ImageView{
@@ -560,9 +587,15 @@ local NotebookWindow = react.RegisterWrapperRecipe("NoterNotebookWindow", builti
 							or "::/gui/builtin/window/icons/symbol_maximize_18.tga",
 					},
 					onClick = function()
+						if params.rememberMode == "Ephemeral" then
+							local value = not latestEphemeralExpanded:get()
+							latestEphemeralExpanded:set(value)
+							ephemeralExpanded:set(value)
+							return
+						end
 						rememberWindowLayout()
 						local layout = model.getWindowLayout(current:get())
-						commit(model.setWindowLayout(current:get(), {x = layout.x, y = layout.y, expanded = not layout.expanded}))
+						commit(model.setWindowLayout(current:get(), {x = layout.x, y = layout.y, expanded = not layout.expanded}, params.rememberMode))
 					end,
 				},
 			},
@@ -570,37 +603,51 @@ local NotebookWindow = react.RegisterWrapperRecipe("NoterNotebookWindow", builti
 		content = builtin.BoxLayout{
 			meta = {class = "noter-content"}, orientation = builtin.type.Orientation.Vertical, children = children,
 		},
-	}
+	})
 end)
 
 local modButtons = ug_require "::/gui/main/main_mod_button_area.tl" as MainModButtonArea
 local NoterButton = react.RegisterPluginRecipe(modButtons.MainModButtonAreaExtension, "NoterButton", function() : TreeNodeId
 	local opened : ReactStateT<boolean> = react.useState(false)
 	local requestedOpen = react.useRef(false)
+	local requestId = react.useRef(0)
 	local alive = react.useRef(true)
 	local captureLayout : ReactRefT<function() | nil> = react.useRef(nil)
 	react.onUnmount(function() alive:set(false) end)
 	local setOpen : function(boolean)
 	setOpen = function(open : boolean)
+		if not alive:get() or requestedOpen:get() == open then return end
 		local capture = captureLayout:get()
 		if not open and capture ~= nil then (capture as function())() end
 		requestedOpen:set(open)
+		local id = requestId:get() + 1
+		requestId:set(id)
 		react.enqueueJoin(function()
-			if not alive:get() or requestedOpen:get() ~= open then return end
+			if not alive:get() or requestId:get() ~= id then return end
 			local windows = globals.getDefaultWindowApi()
 			if not windows then
-				if open then logger.warnOnce("window-api-unavailable", "Cannot open notebook: game window API is unavailable") end
+				if open then
+					requestedOpen:set(false)
+					logger.warnOnce("window-api-unavailable", "Cannot open notebook: game window API is unavailable")
+				end
 				return
 			end
 			if open then
-				local layout = model.getWindowLayout(model.readNotebook(api.gui.game.getGuiSaveData(MOD_ID)))
-				windows.addSingletonWindow(NotebookWindow, {
+				local mode = readRememberMode()
+				local layout = model.getWindowLayout(model.readNotebook(api.gui.game.getGuiSaveData(MOD_ID)), mode)
+				local key = WINDOW_ID .. "." .. tostring(id)
+				local function isOpen() : boolean
+					return alive:get() and requestedOpen:get() and requestId:get() == id
+				end
+				-- A new key resets hook state even when close and reopen share a render cycle.
+				windows.removeAllWindows(NotebookWindow)
+				windows.addWindow(NotebookWindow, key, {
 					initialX = layout.x, initialY = layout.y, captureLayout = captureLayout,
-					onClose = function() setOpen(false) end,
-					isOpen = function() : boolean return alive:get() and requestedOpen:get() end,
+					rememberMode = mode,
+					onClose = function() if isOpen() then setOpen(false) end end,
+					isOpen = isOpen,
 				})
 				api.gui.byId.setVisible(WINDOW_ID, true)
-				windows.moveSingletonWindowToFront(NotebookWindow)
 				logger.debug("Opened notebook")
 			else
 				windows.removeAllWindows(NotebookWindow)

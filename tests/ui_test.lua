@@ -56,6 +56,7 @@ local instances, context, joins = {}, nil, {}
 local builtinKinds = {}
 local layoutKinds = {BoxLayout = true, FlowLayout = true, FloatingLayout = true, TableLayout = true, AbsoluteLayout = true}
 local window, tool, toolbar
+local windowKey
 local toolStack = {}
 local saveId = "first"
 local saves = {first = {}, second = {}}
@@ -70,7 +71,10 @@ local taskButtonWidth = 1600
 local viewportSize = {x = 2560, y = 1440}
 local windowPosition = {x = 0, y = 0}
 local movedWindowPosition
-local titleLaidOut = true
+local forcedOpeningPosition
+local windowLaidOut = true
+local windowReferenceAvailable = true
+local windowReferenceExpired = false
 local restrictedApi = false
 local geometryReads = 0
 local assignedStyleSizes = {}
@@ -128,34 +132,29 @@ local react = {
 	useNodeRef = function(nativeRecipe)
 		return hook(function()
 			return {
-				get = function() return {
-					focus = function() focusCount = focusCount + 1 end,
-					getPosition = function(_, gravityX, gravityY)
-						assert(not restrictedApi, "API is currently restricted: getPosition")
-						geometryReads = geometryReads + 1
-						assert(builtinKinds[nativeRecipe] == "TextView", "Position tracking must read the rendered title")
-						if not titleLaidOut then return {x = 0, y = 0} end
-						return {x = windowPosition.x + (8 + gravityX * 300) / viewportSize.x,
-							y = windowPosition.y + (4 + gravityY * 24) / viewportSize.y}
-					end,
-				} end,
-				hasExpired = function() return false end,
+				nativeKind = builtinKinds[nativeRecipe],
+				get = function()
+					if builtinKinds[nativeRecipe] == "Window" and not windowReferenceAvailable then return nil end
+					return {
+						focus = function() focusCount = focusCount + 1 end,
+						getPosition = function(_, gravityX, gravityY)
+							assert(not restrictedApi, "API is currently restricted: getPosition")
+							geometryReads = geometryReads + 1
+							assert(builtinKinds[nativeRecipe] == "Window", "Position tracking must read the native window bounds")
+							if not windowLaidOut then return {x = 0, y = 0} end
+							return {x = windowPosition.x + gravityX * 640 / viewportSize.x,
+								y = windowPosition.y + gravityY * 280 / viewportSize.y}
+						end,
+					}
+				end,
+				hasExpired = function() return builtinKinds[nativeRecipe] == "Window" and windowReferenceExpired end,
 			}
 		end)
 	end,
 	ref = function(ref) return {nodeRef = ref} end,
 	onMount = function(fn) context.mount[#context.mount + 1] = fn end,
 	onStep = function(fn) context.step[#context.step + 1] = fn end,
-	onStepTimer = function(fn, interval)
-		assert(interval > 0, "Window position polling needs a positive interval")
-		context.timers[#context.timers + 1] = function()
-			local previous = restrictedApi
-			restrictedApi = true
-			local ok, failure = pcall(fn)
-			restrictedApi = previous
-			if not ok then error(failure, 0) end
-		end
-	end,
+	onStepTimer = function() error("Window position capture must not use a polling timer") end,
 	onMouseEvent = function(fn) context.mouseEvents[#context.mouseEvents + 1] = fn end,
 	onUnmount = function(fn) context.unmount[#context.unmount + 1] = fn end,
 	enqueueJoin = function(fn) joins[#joins + 1] = fn end,
@@ -181,20 +180,23 @@ end
 local builtins = {type = {Orientation = {Horizontal = "Horizontal", Vertical = "Vertical"},
 	ScrollBarPolicy = {AlwaysOff = "AlwaysOff", AsNeeded = "AsNeeded"}}}
 for _, name in ipairs({"TextView", "ImageView", "Button", "BoxLayout", "Component", "TextInputField", "ToggleButton", "CheckBox", "Selector", "ActionDescriptor", "ScrollArea", "Window"}) do
-	builtins[name] = function(first, second) return {kind = name, params = second or first} end
+	builtins[name] = function(first, second)
+		return {kind = name, params = second or first, nodeRef = second and first.nodeRef or nil}
+	end
 	builtinKinds[builtins[name]] = name
 end
 -- Tool callbacks run inside the native ActionFn lifecycle context.
 builtins.ActionFn = recipe("ActionFn", function(params) return params.fn() end, "ActionDescriptor")
 
 local windows = {
-	addSingletonWindow = function(windowRecipe, params)
+	addWindow = function(windowRecipe, key, params)
 		assert(windowRecipe.wrappedKind == "Window", "Window container needs a native window wrapper")
+		assert(type(key) == "string", "Window instances need explicit keys")
+		windowKey = key
 		window = windowRecipe(params)
 		windowPosition = movedWindowPosition or {x = params.initialX, y = params.initialY}
 	end,
 	removeAllWindows = function() movedWindowPosition = copy(windowPosition); window = nil end,
-	moveSingletonWindowToFront = function() end,
 }
 
 local function popTool(index)
@@ -265,7 +267,7 @@ local environment = setmetatable({
 				setVisible = function() end,
 				resetMovedWindowPosition = function(id)
 					assert(id == "noter.notebook" and window, "Reset position after the window mounts")
-					windowPosition = {x = window.params.initialX, y = window.params.initialY}
+					windowPosition = copy(forcedOpeningPosition or {x = window.params.initialX, y = window.params.initialY})
 					movedWindowPosition = nil
 				end,
 				getSize = function(id)
@@ -316,7 +318,6 @@ local function resolve(node, path, visited, hasActionDescriptor)
 		visited[key] = true
 		instance.cursor, instance.unmount, instance.inputActions, instance.mount, instance.mouseEvents = 0, {}, {}, {}, {}
 		instance.step = {}
-		instance.timers = {}
 		local previousContext = context
 		context = instance
 		local result = node.recipe.fn(node.params)
@@ -335,7 +336,9 @@ local function resolve(node, path, visited, hasActionDescriptor)
 		assert(hasActionDescriptor, "Selector requires an enclosing ActionDescriptor")
 	end
 	local insideActionDescriptor = hasActionDescriptor or node.kind == "ActionDescriptor"
-	local result = {kind = node.kind, params = {}}
+	local result = {kind = node.kind, params = {}, nodeRef = node.nodeRef}
+	if result.nodeRef then assert(result.nodeRef.nativeKind == result.kind, "Node reference needs its declared native control") end
+	if result.kind == "Window" then assert(result.nodeRef, "Position capture needs a reference attached to the native window") end
 	for key, value in pairs(node.params) do
 		if type(value) == "table" and value.kind then
 			result.params[key] = resolve(value, path .. "/" .. key, visited, insideActionDescriptor)
@@ -376,7 +379,7 @@ local function render()
 	reorderChecks = 0
 	local visited = {}
 	local root = resolve(toolbar, "toolbar", visited)
-	local notebookWindow = window and resolve(window, "window", visited)
+	local notebookWindow = window and resolve(window, "window/" .. windowKey, visited)
 	local action = tool and resolve(builtins.ActionFn{fn = tool.action}, "tool/" .. tool.key, visited)
 	if action then assert(action.kind == "ActionDescriptor", "Tool actions must return an action descriptor") end
 	local selector = find(action, function(node) return node.kind == "Selector" end)
@@ -390,14 +393,16 @@ local function render()
 	return root, notebookWindow, selector, action
 end
 
-local function scheduleWindowLayoutPoll()
-	for _, instance in pairs(instances) do
-		for _, fn in ipairs(instance.timers) do fn() end
-	end
+local function notifyWindowMoved(view)
+	local previous = restrictedApi
+	restrictedApi = true
+	local ok, failure = pcall(assert(view.params.onMovedChange, "Window must handle native movement notifications"))
+	restrictedApi = previous
+	if not ok then error(failure, 0) end
 end
 
-local function pollWindowLayout()
-	scheduleWindowLayoutPoll()
+local function captureWindowMove(view)
+	notifyWindowMoved(view)
 	flush()
 end
 
@@ -448,6 +453,10 @@ local function toolbarButton(root)
 	return assert(find(root, function(node) return node.kind == "ToggleButton" end), "Missing toolbar toggle")
 end
 
+local function windowIsExpanded(view)
+	return view.params.expanded == true
+end
+
 local invalidRecipe = recipe("InvalidControlRoot", function() return builtins.ToggleButton{} end)
 local valid, failure = pcall(resolve, invalidRecipe(), "regression", {})
 expect(not valid and tostring(failure):find("Recipe child must be a layout", 1, true),
@@ -469,36 +478,47 @@ expect(view.params.initialX == 0.04 and view.params.initialY == 0.1,
 	"Notebook initially opens 4% from the left and 10% from the top, matching UIT")
 expect(view.params.title == "Noter · 0 remaining" and focusCount == 1,
 	"Opening focuses the composer and shows the remaining count")
-expect(view.params.expanded == false, "Notebook opens at normal size")
-local readsBeforeTimer = geometryReads
-local writesBeforeTimer = writeCount
-scheduleWindowLayoutPoll()
-expect(geometryReads == readsBeforeTimer and writeCount == writesBeforeTimer,
-	"Restricted timer callbacks queue window polling without reading GUI geometry or writing save data")
+expect(not windowIsExpanded(view), "Notebook opens at normal size")
+local readsBeforeMoveEvent = geometryReads
+local writesBeforeMoveEvent = writeCount
+notifyWindowMoved(view)
+expect(geometryReads == readsBeforeMoveEvent and writeCount == writesBeforeMoveEvent,
+	"Movement callbacks queue capture without reading GUI geometry or writing save data")
 flush()
-expect(geometryReads > readsBeforeTimer, "Queued window polling reads geometry on the main thread")
+expect(geometryReads > readsBeforeMoveEvent, "Queued movement capture reads geometry on the main thread")
+local readsBeforeIdle = geometryReads
+for _ = 1, 10 do _, view = render() end
+expect(geometryReads == readsBeforeIdle and writeCount == writesBeforeMoveEvent,
+	"Idle windows perform no position reads or writes")
 expect(view.params.meta.class == nil, "Missing mod parameters preserve the native window transparency")
 local writesBeforeNoop = writeCount
 view.params.onPinned(false)
 local hide = assert(find(view, function(node) return node.kind == "CheckBox" and node.params.label == "Hide completed" end))
 hide.params.onValueChange(0)
 expect(writeCount == writesBeforeNoop, "Unchanged native preference events do not dirty the save")
-pollWindowLayout()
+captureWindowMove(view)
 expect(writeCount == writesBeforeNoop and notebook().windowLayout == nil,
 	"An unchanged default window does not create save data")
+windowPosition = {x = 0.12, y = 0.18}
+windowLaidOut = false
+captureWindowMove(view)
+expect(writeCount == writesBeforeNoop, "Empty window bounds are ignored before layout")
+windowLaidOut = true
+local readsBeforeRepeatedEvents = geometryReads
+for _ = 1, 3 do notifyWindowMoved(view) end
+flush()
+expect(geometryReads == readsBeforeRepeatedEvents + 2 and writeCount == writesBeforeNoop + 1
+	and math.abs(model.getWindowLayout(notebook()).x - 0.12) < 0.000001,
+	"Repeated move notifications coalesce into one position capture and save-data write")
 windowPosition = {x = 0.16, y = 0.22}
-titleLaidOut = false
-pollWindowLayout()
-expect(writeCount == writesBeforeNoop, "Empty title bounds are ignored before layout")
-titleLaidOut = true
-pollWindowLayout()
+captureWindowMove(view)
 local rememberedLayout = model.getWindowLayout(notebook())
 expect(math.abs(rememberedLayout.x - 0.16) < 0.000001 and math.abs(rememberedLayout.y - 0.22) < 0.000001,
-	"Dragging stores the window anchor rather than the title's offset")
+	"A second drag updates the saved anchor while the window remains open")
 local writesAfterMove = writeCount
-pollWindowLayout()
+captureWindowMove(view)
 windowPosition.x = windowPosition.x + 0.25 / viewportSize.x
-pollWindowLayout()
+captureWindowMove(view)
 expect(writeCount == writesAfterMove, "Stationary windows and subpixel noise do not rewrite save data")
 windowPosition = {x = rememberedLayout.x, y = rememberedLayout.y}
 local input = assert(find(view, function(node) return node.kind == "TextInputField" end))
@@ -522,12 +542,12 @@ expect(headerChildren[1].kind == "TextView" and headerChildren[1].params.text ==
 resizeButton.params.onClick()
 _, view = render()
 input = assert(find(view, function(node) return node.kind == "TextInputField" end))
-expect(view.params.expanded and input.params.value == "Draft while resizing" and focusCount == 1,
+expect(windowIsExpanded(view) and input.params.value == "Draft while resizing" and focusCount == 1,
 	"Expanding preserves the composer draft without requesting focus")
 tooltipButton(view.params.header, "Restore normal size").params.onClick()
 _, view = render()
 input = assert(find(view, function(node) return node.kind == "TextInputField" end))
-expect(not view.params.expanded and input.params.value == "Draft while resizing" and writeCount == writesBeforeResize + 2
+expect(not windowIsExpanded(view) and input.params.value == "Draft while resizing" and writeCount == writesBeforeResize + 2
 	and not model.getWindowLayout(notebook()).expanded,
 	"Changing size preserves the draft and saves each accepted size choice")
 local longTaskText = string.rep("A long task with many words to wrap ", 12) .. "end."
@@ -800,7 +820,7 @@ local focusBeforeResize = focusCount
 tooltipButton(view, "Expand window").params.onClick()
 _, view = render()
 editInput = assert(find(taskRow(view, 2), function(node) return node.kind == "TextInputField" end))
-expect(view.params.expanded and editInput.params.value == "Upgrade the railway" and focusCount == focusBeforeResize,
+expect(windowIsExpanded(view) and editInput.params.value == "Upgrade the railway" and focusCount == focusBeforeResize,
 	"Expanding during an edit preserves the selected row, draft and focus")
 editor = findButton(view, "Save")
 editor.params.onClick()
@@ -896,6 +916,8 @@ flush()
 _, view = render()
 clickTask(view, 2)
 _, view = render()
+tooltipButton(view, "Restore normal size").params.onClick()
+_, view = render()
 windowPosition = {x = 0.28, y = 0.24}
 view.params.onClose()
 flush()
@@ -906,10 +928,10 @@ toolbarButton(root).params.onValueChange(1)
 flush()
 _, view = render()
 expect(focusCount == focusBeforeReopen + 1, "Reopening the notebook requests text focus once")
-expect(view.params.expanded and model.getWindowLayout(notebook()).expanded,
-	"Reopening restores the saved expanded size")
+expect(not windowIsExpanded(view) and not model.getWindowLayout(notebook()).expanded,
+	"Reopening restores the saved normal size")
 expect(math.abs(view.params.initialX - 0.28) < 0.000001 and math.abs(view.params.initialY - 0.24) < 0.000001,
-	"Closing captures the latest position before the next poll")
+	"Closing captures the latest position even without a movement notification")
 expect(notebook().tasks[1].text == "Upgrade both platforms" and view.params.pinned,
 	"Close/reopen restores notebook and pin preference")
 expect(not getButton(view, "Edit"), "Reopening begins with compact, unselected rows")
@@ -930,7 +952,7 @@ toolbarButton(root).params.onValueChange(1)
 flush()
 _, view = render()
 windowPosition = {x = 0.36, y = 0.32}
-scheduleWindowLayoutPoll()
+notifyWindowMoved(view)
 toolbarButton(root).params.onValueChange(0)
 flush()
 root = render()
@@ -943,12 +965,10 @@ root = render()
 toolbarButton(root).params.onValueChange(1)
 flush()
 _, view = render()
-expect(view.params.expanded and math.abs(view.params.initialX - 0.36) < 0.000001
+expect(not windowIsExpanded(view) and math.abs(view.params.initialX - 0.36) < 0.000001
 	and math.abs(view.params.initialY - 0.32) < 0.000001,
 	"Saved window layout survives recreation of the entire UI runtime")
-local lateLayoutPoll
-for _, instance in pairs(instances) do lateLayoutPoll = lateLayoutPoll or instance.timers[1] end
-assert(lateLayoutPoll, "Window position must be polled while open")
+local lateLayoutMove = assert(view.params.onMovedChange)
 view.params.onClose()
 flush()
 root = render()
@@ -958,13 +978,13 @@ toolbarButton(root).params.onValueChange(1)
 flush()
 _, view = render()
 expect(#notebook().tasks == 0 and #saves.first.apasz_noter.tasks == 1, "Saves have independent notebooks")
-expect(not view.params.expanded and view.params.initialX == 0.04 and view.params.initialY == 0.1
+expect(not windowIsExpanded(view) and view.params.initialX == 0.04 and view.params.initialY == 0.1
 	and windowPosition.x == 0.04 and windowPosition.y == 0.1 and notebook().windowLayout == nil,
 	"A fresh save starts at the default size and position despite the previous save's moved window")
-local writesBeforeLateLayoutPoll = writeCount
-lateLayoutPoll()
+local writesBeforeLateLayoutMove = writeCount
+lateLayoutMove()
 flush()
-expect(writeCount == writesBeforeLateLayoutPoll and notebook().windowLayout == nil,
+expect(writeCount == writesBeforeLateLayoutMove and notebook().windowLayout == nil,
 	"Late layout callbacks from an old window cannot write into the newly loaded save")
 view.params.onClose()
 flush()
@@ -973,7 +993,7 @@ saveId = "first"
 toolbarButton(root).params.onValueChange(1)
 flush()
 _, view = render()
-expect(view.params.expanded and math.abs(view.params.initialX - 0.36) < 0.000001
+expect(not windowIsExpanded(view) and math.abs(view.params.initialX - 0.36) < 0.000001
 	and math.abs(view.params.initialY - 0.32) < 0.000001,
 	"Returning to an existing save restores its own layout")
 view.params.onClose()
@@ -995,8 +1015,10 @@ if runtime.debugLoggingEnabled then
 		and messages["[Noter] Started map point picker for task 2"]
 		and messages["[Noter] Selected map point: x=120.00, y=-30.00, z=8.00"]
 		and messages["[Noter] Canceled map point selection"]
+		and messages["[Noter] Window movement callback"]
+		and messages["[Noter] Captured window position: x=0.1600, y=0.2200"]
 		and messages["[Noter] Updated notebook GUI save data: 2 tasks, 1 remaining"],
-		"Enabled debug logging covers window, save-data and map-picker activity")
+		"Enabled debug logging covers window movement, captured positions, save data and map-picker activity")
 else
 	expect(#runtime.entries == 0, "Normal notebook activity emits no messages with production defaults")
 end
@@ -1051,6 +1073,15 @@ expect(previewTextStyle.textAutoWrap and previewTextStyle.maxSize[1] == collapse
 expect(collapsedTextStyle.gravity[1] == 0 and rules[scope .. "!noter-task-button"].gravity[1] == 0,
 	"Normal-size note previews stay left-aligned")
 local expandedScope = "Window#noter.notebook!window-expanded "
+local expandedWindowStyle = rules["Window#noter.notebook!window-expanded"]
+expect(expandedWindowStyle.size[1] == "75vw" and expandedWindowStyle.size[2] == "80vh",
+	"Expanded windows use the larger window dimensions")
+expect(expandedWindowStyle.anchorPoint[1] == 0.5 and expandedWindowStyle.anchorPoint[2] == 0.5
+	and expandedWindowStyle.gravity[1] == 0.5 and expandedWindowStyle.gravity[2] == 0.5,
+	"Expanded placement aligns the window centre with the screen centre")
+local normalWindowStyle = rules["Window#noter.notebook"]
+expect(normalWindowStyle.anchorPoint[1] == 0 and normalWindowStyle.anchorPoint[2] == 0,
+	"Normal placement continues to use the top-left anchor")
 local expandedTextStyle = rules[expandedScope .. "TextView!noter-text"]
 expect(rules[expandedScope .. "!noter-task-button"].gravity[1] == -1
 	and expandedTextStyle.gravity[1] == -1 and expandedTextStyle.minSize[1] == 0
@@ -1071,12 +1102,12 @@ for _, case in ipairs({
 	toolbarButton(root).params.onValueChange(1)
 	flush()
 	_, view = render()
-	local expectedClass = case.opaque and "noter-opaque" or nil
 	local writesBeforeOpaqueRender = writeCount
-	expect(view.params.meta.class == expectedClass, case.name .. ": normal window uses the requested appearance")
+	expect(view.params.meta.class == (case.opaque and "noter-opaque" or nil) and not windowIsExpanded(view),
+		case.name .. ": normal window uses the requested appearance")
 	tooltipButton(view, "Expand window").params.onClick()
 	_, view = render()
-	expect(view.params.expanded and view.params.meta.class == expectedClass,
+	expect(windowIsExpanded(view) and view.params.meta.class == (case.opaque and "noter-opaque" or nil),
 		case.name .. ": expanded window uses the requested appearance")
 	tooltipButton(view, "Restore normal size").params.onClick()
 	_, view = render()
@@ -1086,6 +1117,231 @@ for _, case in ipairs({
 	root = render()
 end
 expect(writeCount == writesBeforeAppearance + 6, "Window appearance changes do not add writes beyond the six size choices")
+for _, case in ipairs({
+	{name = "Ephemeral", index = 1, x = 0.04, y = 0.1, expanded = false},
+	{name = "Remembered", index = 2, x = 0, y = 1, expanded = false},
+}) do
+	saveId = "remember-" .. tostring(case.index)
+	saves[saveId] = {apasz_noter = model.setWindowLayout(model.newNotebook(), {x = -0.12, y = 1.03, expanded = false})}
+	modParams = {apasz_noter = {apasz_noter_remember = case.index}}
+	local readsBeforeOpen = geometryReads
+	local writesBeforeOpen = writeCount
+	toolbarButton(root).params.onValueChange(1)
+	flush()
+	_, view = render()
+	expect(view.params.initialX == case.x and view.params.initialY == case.y and windowIsExpanded(view) == case.expanded,
+		case.name .. ": reopening applies the mode to an existing saved layout")
+	expect(geometryReads == readsBeforeOpen and writeCount == writesBeforeOpen,
+		case.name .. ": opening requires no position calibration and does not rewrite saved data")
+	windowPosition = {x = -0.06, y = 0.96}
+	captureWindowMove(view)
+	tooltipButton(view, case.expanded and "Restore normal size" or "Expand window").params.onClick()
+	_, view = render()
+	expect(windowIsExpanded(view) ~= case.expanded, case.name .. ": resizing updates the open window")
+	local movedLayout = model.getWindowLayout(notebook())
+	if case.index == 1 then
+		expect(writeCount == writesBeforeOpen and geometryReads == readsBeforeOpen
+			and movedLayout.x == -0.12 and movedLayout.y == 1.03 and not movedLayout.expanded,
+			"Ephemeral moves and size changes neither measure geometry nor change existing saved layout data")
+		local composer = assert(find(view, function(node) return node.kind == "TextInputField" end))
+		composer.params.onValueChange("Notes remain saved in Ephemeral mode")
+		view.params.onPinned(true)
+		expect(#notebook().tasks == 1 and notebook().pinned and notebook().windowLayout.x == -0.12,
+			"Ephemeral still saves notes and pin preferences without overwriting a remembered layout")
+	else
+		expect(movedLayout.x == 0 and math.abs(movedLayout.y - 0.96) < 0.000001
+			and movedLayout.expanded, case.name .. ": movement and resizing use the selected bounds policy")
+		local writesBeforeRepeatedOutside = writeCount
+		local readsBeforeRepeatedOutside = geometryReads
+		captureWindowMove(view)
+		expect(writeCount == writesBeforeRepeatedOutside
+			and geometryReads == readsBeforeRepeatedOutside,
+			"Remembered ignores expanded window movement without measuring geometry or rewriting the normal anchor")
+	end
+	view.params.onClose()
+	flush()
+	root = render()
+	toolbarButton(root).params.onValueChange(1)
+	flush()
+	_, view = render()
+	if case.index == 1 then
+		expect(view.params.initialX == 0.04 and view.params.initialY == 0.1 and not windowIsExpanded(view),
+			"Closing Ephemeral restores the default size and position despite the native moved-window cache")
+	else
+		expect(view.params.initialX == 0.5 and view.params.initialY == 0.5 and windowIsExpanded(view)
+			and notebook().windowLayout.x == movedLayout.x and notebook().windowLayout.y == movedLayout.y,
+			case.name .. ": expanded reopenings use centred placement and retain the normal anchor")
+	end
+	view.params.onClose()
+	flush()
+	root = render()
+end
+saveId = "normal-native-reposition"
+saves[saveId] = {apasz_noter = model.setWindowLayout(model.newNotebook(), {x = 0.8, y = 0.8, expanded = false})}
+modParams = {apasz_noter = {apasz_noter_remember = 2}}
+forcedOpeningPosition = {x = 0.6, y = 0.55}
+toolbarButton(root).params.onValueChange(1)
+flush()
+_, view = render()
+forcedOpeningPosition = nil
+windowPosition = {x = 0.52, y = 0.42}
+captureWindowMove(view)
+expect(math.abs(notebook().windowLayout.x - 0.52) < 0.000001
+	and math.abs(notebook().windowLayout.y - 0.42) < 0.000001,
+	"Dragging after native placement saves the actual normal position without an opening-offset bias")
+local writesBeforeResolution = writeCount
+local originalViewport = viewportSize
+viewportSize = {x = 3200, y = 1800}
+captureWindowMove(view)
+windowPosition = {x = 0.52 + 0.25 / viewportSize.x, y = 0.42 + 0.25 / viewportSize.y}
+captureWindowMove(view)
+expect(writeCount == writesBeforeResolution,
+	"Resolution changes preserve stationary coordinates and subpixel noise does not dirty saved data")
+windowPosition = {x = 0.33, y = 0.27}
+captureWindowMove(view)
+expect(math.abs(notebook().windowLayout.x - 0.33) < 0.000001
+	and math.abs(notebook().windowLayout.y - 0.27) < 0.000001,
+	"Both coordinates are captured at the current resolution")
+local writesBeforeInvalidGeometry, readsBeforeInvalidReference = writeCount, geometryReads
+windowReferenceAvailable = false
+captureWindowMove(view)
+windowReferenceAvailable = true
+windowReferenceExpired = true
+captureWindowMove(view)
+windowReferenceExpired = false
+expect(geometryReads == readsBeforeInvalidReference and writeCount == writesBeforeInvalidGeometry,
+	"Missing and expired window references are ignored before accessing geometry")
+viewportSize = {x = 0, y = 0}
+captureWindowMove(view)
+expect(writeCount == writesBeforeInvalidGeometry, "An unavailable viewport cannot overwrite the saved normal position")
+viewportSize = originalViewport
+windowPosition = {x = 0.48, y = 0.38}
+view.params.onClose()
+flush()
+root = render()
+toolbarButton(root).params.onValueChange(1)
+flush()
+_, view = render()
+expect(math.abs(windowPosition.x - 0.48) < 0.000001 and math.abs(windowPosition.y - 0.38) < 0.000001,
+	"Closing without a move notification captures the actual position after native placement")
+view.params.onClose()
+flush()
+root = render()
+saveId = "expanded-position"
+local normalPosition = {x = 0.24, y = 0.25, expanded = false}
+saves[saveId] = {apasz_noter = model.setWindowLayout(model.newNotebook(), normalPosition)}
+modParams = {apasz_noter = {apasz_noter_remember = 2}}
+toolbarButton(root).params.onValueChange(1)
+flush()
+_, view = render()
+tooltipButton(view, "Expand window").params.onClick()
+_, view = render()
+local expandedPosition = {x = 0.04, y = 0.115}
+windowPosition = copy(expandedPosition)
+local readsBeforeExpandedMove, writesBeforeExpandedMove = geometryReads, writeCount
+captureWindowMove(view)
+expect(geometryReads == readsBeforeExpandedMove and writeCount == writesBeforeExpandedMove,
+	"Moving an expanded window leaves its saved normal position unchanged")
+for _, useToolbar in ipairs({false, true, false}) do
+	local writesBeforeReopen = writeCount
+	if useToolbar then toolbarButton(root).params.onValueChange(0)
+	else view.params.onClose() end
+	flush()
+	root = render()
+	toolbarButton(root).params.onValueChange(1)
+	flush()
+	_, view = render()
+	expect(windowIsExpanded(view) and windowPosition.x == 0.5 and windowPosition.y == 0.5
+		and notebook().windowLayout.x == normalPosition.x and notebook().windowLayout.y == normalPosition.y
+		and geometryReads == readsBeforeExpandedMove and writeCount == writesBeforeReopen,
+		"Both close controls reopen expanded windows centred and preserve the saved normal position")
+end
+-- Expanded state also survives a fresh UI runtime.
+view.params.onClose()
+flush()
+root = render()
+instances = {}
+toolbar = exports.NoterButton()
+root = render()
+toolbarButton(root).params.onValueChange(1)
+flush()
+_, view = render()
+expect(windowIsExpanded(view) and windowPosition.x == 0.5 and windowPosition.y == 0.5,
+	"Expanded state survives recreation of the UI runtime with centred placement")
+tooltipButton(view, "Restore normal size").params.onClick()
+-- Native restoration can place the normal window away from its expanded opening anchor.
+windowPosition = {x = normalPosition.x, y = normalPosition.y}
+_, view = render()
+windowPosition = {x = 0.32, y = 0.28}
+captureWindowMove(view)
+view.params.onClose()
+flush()
+root = render()
+toolbarButton(root).params.onValueChange(1)
+flush()
+_, view = render()
+expect(not windowIsExpanded(view) and math.abs(windowPosition.x - 0.32) < 0.000001
+	and math.abs(windowPosition.y - 0.28) < 0.000001,
+	"Returning to normal size resumes position tracking and remembers normal state on close")
+view.params.onClose()
+flush()
+root = render()
+for _, index in ipairs({1, 2}) do
+	saveId = "rapid-reopen-" .. tostring(index)
+	saves[saveId] = {}
+	modParams = {apasz_noter = {apasz_noter_remember = index}}
+	toolbarButton(root).params.onValueChange(1)
+	flush()
+	_, view = render()
+	if index == 1 then tooltipButton(view, "Expand window").params.onClick() end
+	local composer = assert(find(view, function(node) return node.kind == "TextInputField" end))
+	composer.params.onTyping("Discard this draft when closing")
+	_, view = render()
+	windowPosition = {x = 0.3, y = 0.4}
+	notifyWindowMoved(view)
+	local staleClose = view.params.onClose
+	view.params.onClose()
+	local readsAfterClose, writesAfterClose = geometryReads, writeCount
+	toolbarButton(root).params.onValueChange(1)
+	flush()
+	expect(geometryReads == readsAfterClose and writeCount == writesAfterClose,
+		"Reopening invalidates queued movement capture before the old window unmounts")
+	_, view = render()
+	composer = assert(find(view, function(node) return node.kind == "TextInputField" end))
+	local expectedX, expectedY = index == 1 and 0.04 or 0.3, index == 1 and 0.1 or 0.4
+	expect(not windowIsExpanded(view) and math.abs(windowPosition.x - expectedX) < 0.000001
+		and math.abs(windowPosition.y - expectedY) < 0.000001 and composer.params.value == "",
+		"Rapid close and reopen creates fresh window state while applying the selected Remember mode")
+	staleClose()
+	flush()
+	_, view = render()
+	expect(view ~= nil, "A late close callback cannot close a newer window instance")
+	composer = assert(find(view, function(node) return node.kind == "TextInputField" end))
+	composer.params.onTyping("Keep this draft while already open")
+	toolbarButton(root).params.onValueChange(1)
+	flush()
+	_, view = render()
+	composer = assert(find(view, function(node) return node.kind == "TextInputField" end))
+	expect(composer.params.value == "Keep this draft while already open",
+		"Repeated open notifications leave the current window and its draft intact")
+	view.params.onClose()
+	flush()
+	root = render()
+end
+saveId = "remember-1"
+for _, index in ipairs({1, 2}) do
+	modParams = {apasz_noter = {apasz_noter_remember = index}}
+	toolbarButton(root).params.onValueChange(1)
+	flush()
+	_, view = render()
+	local expectedX = index == 1 and 0.04 or 0
+	expect(math.abs(view.params.initialX - expectedX) < 0.000001
+		and math.abs(notebook().windowLayout.x + 0.12) < 0.000001,
+		"Switching Remember modes applies the new policy without discarding saved layout data")
+	view.params.onClose()
+	flush()
+	root = render()
+end
 modParams = {}
 saveId = "legacy"
 local legacyText = string.rep("🚂", model.MAX_TEXT_LENGTH + 100)
@@ -1139,10 +1395,10 @@ for locale, texts in pairs(runtime.translations) do
 		{count = tostring(model.MAX_TEXT_LENGTH)}), locale .. ": the character limit tooltip is translated")
 	tooltipButton(view, texts.APASZ_NOTER_EXPAND).params.onClick()
 	_, view = render()
-	expect(view.params.expanded, locale .. ": the translated expand control expands the window")
+	expect(windowIsExpanded(view), locale .. ": the translated expand control expands the window")
 	tooltipButton(view, texts.APASZ_NOTER_NORMAL_SIZE).params.onClick()
 	_, view = render()
-	expect(not view.params.expanded, locale .. ": the translated restore control returns to normal size")
+	expect(not windowIsExpanded(view), locale .. ": the translated restore control returns to normal size")
 	input = assert(find(view, function(node) return node.kind == "TextInputField" end))
 	local literalNote = "User note · APASZ_NOTER_ADD"
 	input.params.onValueChange(literalNote)
@@ -1183,6 +1439,16 @@ for _, invalidValue in ipairs({0, 3, -1, 0.5, "1", true}) do
 	local ok, invalidParameter = pcall(render)
 	expect(not ok and tostring(invalidParameter):find("[Noter] ERROR: Invalid opaque-window parameter:", 1, true),
 		"Invalid opacity parameters fail explicitly instead of choosing an appearance")
+	toolbarButton(root).params.onValueChange(0)
+	flush()
+	root = render()
+end
+for _, invalidValue in ipairs({0, 3, -1, 1.5, "2", false, math.huge}) do
+	modParams = {apasz_noter = {apasz_noter_remember = invalidValue}}
+	toolbarButton(root).params.onValueChange(1)
+	local ok, invalidParameter = pcall(flush)
+	expect(not ok and tostring(invalidParameter):find("[Noter] ERROR: Invalid remember parameter:", 1, true),
+		"Invalid Remember parameters fail explicitly instead of silently selecting a mode")
 	toolbarButton(root).params.onValueChange(0)
 	flush()
 	root = render()

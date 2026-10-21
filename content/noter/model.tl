@@ -2,6 +2,7 @@ local logger = ug_require "apasz_noter::/noter/logger.tl" as ModLogging.Logger
 local model : NoterModel = {MAX_TEXT_LENGTH = 500}
 local FORMAT_VERSION = 1
 local DEFAULT_WINDOW_LAYOUT : NoterModel.WindowLayout = {x = 0.04, y = 0.1, expanded = false}
+local EXPANDED_WINDOW_LAYOUT : NoterModel.WindowLayout = {x = 0.5, y = 0.5, expanded = true}
 
 local function requireValid(condition : boolean, message : string)
 	if not condition then logger.fail(message) end
@@ -95,8 +96,6 @@ end
 local function requireWindowLayout(layout : NoterModel.WindowLayout)
 	requireValid(type(layout) == "table", "Window layout must be a table")
 	requireValid(isFiniteNumber(layout.x) and isFiniteNumber(layout.y), "Window position must contain finite coordinates")
-	requireValid(layout.x >= 0 and layout.x <= 1 and layout.y >= 0 and layout.y <= 1,
-		"Window position must be in screen fractions")
 	requireValid(type(layout.expanded) == "boolean", "Window expanded state must be a boolean")
 end
 
@@ -245,16 +244,36 @@ function model.setPreferences(notebook : NoterModel.Notebook, hideCompleted : bo
 	return result
 end
 
-function model.getWindowLayout(notebook : NoterModel.Notebook) : NoterModel.WindowLayout
-	return notebook.windowLayout or DEFAULT_WINDOW_LAYOUT
+local function windowLayoutForMode(layout : NoterModel.WindowLayout,
+	mode : NoterModel.RememberMode | nil) : NoterModel.WindowLayout
+	if mode == nil then return layout end
+	if mode == "Ephemeral" then return DEFAULT_WINDOW_LAYOUT end
+	if mode ~= "Remembered" then return logger.fail("Invalid remember mode: " .. tostring(mode)) end
+	local x = math.max(0, math.min(1, layout.x))
+	local y = math.max(0, math.min(1, layout.y))
+	if x == layout.x and y == layout.y then return layout end
+	return {x = x, y = y, expanded = layout.expanded}
 end
 
-function model.setWindowLayout(notebook : NoterModel.Notebook, layout : NoterModel.WindowLayout) : NoterModel.Notebook
+-- With a mode, return the opening layout; without one, expose the stored normal anchor.
+function model.getWindowLayout(notebook : NoterModel.Notebook,
+	mode? : NoterModel.RememberMode) : NoterModel.WindowLayout
+	local layout = windowLayoutForMode(notebook.windowLayout or DEFAULT_WINDOW_LAYOUT, mode)
+	if mode == "Remembered" and layout.expanded then
+		return EXPANDED_WINDOW_LAYOUT
+	end
+	return layout
+end
+
+function model.setWindowLayout(notebook : NoterModel.Notebook, layout : NoterModel.WindowLayout,
+	mode? : NoterModel.RememberMode) : NoterModel.Notebook
 	requireWindowLayout(layout)
+	if mode == "Ephemeral" then return notebook end
+	local constrained = windowLayoutForMode(layout, mode)
 	local current = model.getWindowLayout(notebook)
-	if current.x == layout.x and current.y == layout.y and current.expanded == layout.expanded then return notebook end
+	if current.x == constrained.x and current.y == constrained.y and current.expanded == constrained.expanded then return notebook end
 	local result = copyNotebook(notebook)
-	result.windowLayout = {x = layout.x, y = layout.y, expanded = layout.expanded}
+	result.windowLayout = {x = constrained.x, y = constrained.y, expanded = constrained.expanded}
 	return result
 end
 
