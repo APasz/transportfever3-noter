@@ -5,7 +5,7 @@
             "role": "CREATOR"
         }
     ],
-    "description": "Per-save tasks with editing, completion, ordering and map pins. Open Noter from the mod toolbar. Save the game to keep notes; removing the mod may discard them.",
+    "description": "Per-save tasks with editing, completion, ordering and map pins. Open Noter from the mod toolbar. Remembered (default) keeps the normal window position and normal/expanded choice; expanded windows reopen centred. Ephemeral resets size and position on close. Opaque window enables a solid background. Save the game to keep notes and preferences across sessions; a fresh save starts with defaults. Removing the mod may discard its data.",
     "name": "Noter",
     "summary": "Per-save to-do notes with map pins.",
     "url": "https://mod.io/g/transportfever3/m/noter",
@@ -14,62 +14,62 @@
         "de": {
             "name": "Noter",
             "summary": "Aufgaben und Notizen mit Kartenpunkten für jeden Spielstand.",
-            "description": "Aufgaben pro Spielstand mit Bearbeitung, Erledigungsstatus, Sortierung und Kartenpunkten. Öffne Noter über die Mod-Leiste. Speichere das Spiel, um Notizen zu behalten; beim Entfernen der Mod können sie verloren gehen."
+            "description": "Aufgaben pro Spielstand mit Bearbeitung, Erledigungsstatus, Sortierung und Kartenpunkten. Öffne Noter über die Mod-Leiste. Gespeichert (Standard) merkt sich die Position in Normalgröße und den Fensterzustand; vergrößerte Fenster öffnen sich wieder zentriert. Flüchtig setzt Größe und Position beim Schließen zurück. Undurchsichtiges Fenster aktiviert einen undurchsichtigen Hintergrund. Speichere das Spiel, um Notizen und Einstellungen über Sitzungen hinweg zu behalten; ein neuer Spielstand beginnt mit den Standardwerten. Beim Entfernen der Mod können ihre Daten verloren gehen."
         },
         "es": {
             "name": "Noter",
             "summary": "Notas y tareas por partida con puntos en el mapa.",
-            "description": "Tareas por partida con edición, estado de finalización, ordenación y puntos en el mapa. Abre Noter desde la barra de mods. Guarda la partida para conservar las notas; quitar el mod puede borrarlas."
+            "description": "Tareas por partida con edición, estado de finalización, ordenación y puntos en el mapa. Abre Noter desde la barra de mods. Recordado (predeterminado) conserva la posición normal y el estado normal o ampliado; las ventanas ampliadas se abren centradas. Efímero restablece el tamaño y la posición al cerrar. Ventana opaca activa un fondo sólido. Guarda la partida para conservar notas y preferencias entre sesiones; una partida nueva comienza con los valores predeterminados. Quitar el mod puede borrar sus datos."
         },
         "fr": {
             "name": "Noter",
             "summary": "Tâches et notes par sauvegarde avec points sur la carte.",
-            "description": "Tâches par sauvegarde avec modification, suivi, classement et points sur la carte. Ouvrez Noter depuis la barre des mods. Sauvegardez la partie pour conserver les notes ; retirer le mod peut les supprimer."
+            "description": "Tâches par sauvegarde avec modification, suivi, classement et points sur la carte. Ouvrez Noter depuis la barre des mods. Mémorisé (par défaut) conserve la position normale et l’état normal ou agrandi ; les fenêtres agrandies se rouvrent au centre. Éphémère réinitialise la taille et la position à la fermeture. Fenêtre opaque active un fond opaque. Sauvegardez la partie pour conserver notes et préférences entre les sessions ; une nouvelle sauvegarde commence avec les réglages par défaut. Retirer le mod peut supprimer ses données."
         },
         "it": {
             "name": "Noter",
             "summary": "Note e attività per ogni partita con punti sulla mappa.",
-            "description": "Attività per ogni partita con modifica, completamento, ordinamento e punti sulla mappa. Apri Noter dalla barra delle mod. Salva la partita per conservare le note; rimuovere la mod potrebbe eliminarle."
+            "description": "Attività per ogni partita con modifica, completamento, ordinamento e punti sulla mappa. Apri Noter dalla barra delle mod. Memorizzato (predefinito) conserva la posizione normale e lo stato normale o ingrandito; le finestre ingrandite si riaprono al centro. Temporaneo ripristina dimensioni e posizione alla chiusura. Finestra opaca attiva uno sfondo opaco. Salva la partita per conservare note e preferenze tra le sessioni; una nuova partita inizia con i valori predefiniti. Rimuovere la mod potrebbe eliminarne i dati."
         },
         "ja": {
             "name": "Noter",
             "summary": "セーブごとのタスクと地図上の地点を記録するメモ帳。",
-            "description": "セーブごとにタスクを編集・完了・並べ替え、地図上の地点を登録できます。ModツールバーからNoterを開きます。メモを残すにはゲームを保存してください。Modを削除するとメモが失われる場合があります。"
+            "description": "セーブごとにタスクを編集・完了・並べ替え、地図上の地点を登録できます。ModツールバーからNoterを開きます。「記憶する」（既定）は通常時の位置と通常・拡大の状態を保存し、拡大状態では画面中央に開きます。「一時的」は閉じるとサイズと位置をリセットします。「ウィンドウを不透明にする」で背景を不透明にできます。メモと設定を次回も使うにはゲームを保存してください。新しいセーブは既定の設定で始まります。Modを削除するとModの保存データが失われる場合があります。"
         },
         "ko": {
             "name": "Noter",
             "summary": "저장 파일별 할 일 메모와 지도 지점 표시.",
-            "description": "저장 파일별로 작업을 편집하고 완료 표시, 순서 변경, 지도 지점 연결을 할 수 있습니다. 모드 도구 모음에서 Noter를 여세요. 메모를 유지하려면 게임을 저장하세요. 모드를 제거하면 메모가 사라질 수 있습니다."
+            "description": "저장 파일별로 작업을 편집하고 완료 표시, 순서 변경, 지도 지점 연결을 할 수 있습니다. 모드 도구 모음에서 Noter를 여세요. 기억(기본값)은 일반 창의 위치와 일반/확대 상태를 유지하며, 확대 창은 화면 중앙에 다시 열립니다. 임시는 닫을 때 크기와 위치를 초기화합니다. 불투명 창을 켜면 배경이 불투명해집니다. 다음 실행에서도 메모와 설정을 유지하려면 게임을 저장하세요. 새 저장 파일은 기본 설정으로 시작합니다. 모드를 제거하면 모드 데이터가 사라질 수 있습니다."
         },
         "nl": {
             "name": "Noter",
             "summary": "Taken en notities per spelbestand met kaartpunten.",
-            "description": "Taken per spelbestand met bewerken, afvinken, ordenen en kaartpunten. Open Noter via de modwerkbalk. Sla het spel op om notities te bewaren; verwijderen van de mod kan ze wissen."
+            "description": "Taken per spelbestand met bewerken, afvinken, ordenen en kaartpunten. Open Noter via de modwerkbalk. Onthouden (standaard) bewaart de normale vensterpositie en de normale of vergrote stand; vergrote vensters openen weer in het midden. Tijdelijk zet grootte en positie terug bij sluiten. Ondoorzichtig venster maakt de achtergrond ondoorzichtig. Sla het spel op om notities en voorkeuren tussen sessies te bewaren; een nieuw spelbestand begint met de standaardinstellingen. Verwijderen van de mod kan de gegevens wissen."
         },
         "pl": {
             "name": "Noter",
             "summary": "Notatnik zadań z punktami na mapie dla każdego zapisu gry.",
-            "description": "Zadania dla każdego zapisu gry z edycją, oznaczaniem wykonania, zmianą kolejności i punktami na mapie. Otwórz Noter z paska modów. Zapisz grę, aby zachować notatki; usunięcie moda może je usunąć."
+            "description": "Zadania dla każdego zapisu gry z edycją, oznaczaniem wykonania, zmianą kolejności i punktami na mapie. Otwórz Noter z paska modów. Zapamiętane (domyślnie) zachowuje położenie zwykłego okna i stan normalny lub powiększony; powiększone okna otwierają się na środku. Tymczasowe resetuje rozmiar i położenie przy zamknięciu. Nieprzezroczyste okno włącza nieprzezroczyste tło. Zapisz grę, aby zachować notatki i ustawienia między sesjami; nowy zapis zaczyna od ustawień domyślnych. Usunięcie moda może usunąć jego dane."
         },
         "pt_BR": {
             "name": "Noter",
             "summary": "Notas de tarefas por jogo salvo com pontos no mapa.",
-            "description": "Tarefas por jogo salvo com edição, conclusão, ordenação e pontos no mapa. Abra o Noter pela barra de mods. Salve o jogo para manter as notas; remover o mod pode apagá-las."
+            "description": "Tarefas por jogo salvo com edição, conclusão, ordenação e pontos no mapa. Abra o Noter pela barra de mods. Lembrado (padrão) mantém a posição normal e o estado normal ou ampliado; janelas ampliadas reabrem centralizadas. Efêmero redefine tamanho e posição ao fechar. Janela opaca ativa um fundo sólido. Salve o jogo para manter notas e preferências entre sessões; um novo jogo salvo começa com os padrões. Remover o mod pode apagar seus dados."
         },
         "ru": {
             "name": "Noter",
             "summary": "Задачи и заметки с точками на карте для каждого сохранения.",
-            "description": "Задачи для каждого сохранения с редактированием, отметками о выполнении, сортировкой и точками на карте. Откройте Noter на панели модов. Сохраняйте игру, чтобы не потерять заметки; удаление мода может их удалить."
+            "description": "Задачи для каждого сохранения с редактированием, отметками о выполнении, сортировкой и точками на карте. Откройте Noter на панели модов. Запоминать (по умолчанию) сохраняет положение обычного окна и обычное или увеличенное состояние; увеличенные окна открываются по центру. Временное сбрасывает размер и положение при закрытии. Непрозрачное окно включает непрозрачный фон. Сохраняйте игру, чтобы сохранить заметки и настройки между сеансами; новое сохранение начинается с настроек по умолчанию. Удаление мода может удалить его данные."
         },
         "zh_CN": {
             "name": "Noter",
             "summary": "每个存档独立的待办笔记，支持地图位置标记。",
-            "description": "每个存档都有独立的任务，支持编辑、完成标记、排序和关联地图位置。从模组工具栏打开 Noter。保存游戏以保留笔记；移除模组可能导致笔记丢失。"
+            "description": "每个存档都有独立的任务，支持编辑、完成标记、排序和关联地图位置。从模组工具栏打开 Noter。记忆模式（默认）保留普通窗口的位置及普通或展开状态；展开窗口重新打开时居中。临时模式在关闭时重置大小和位置。不透明窗口可启用实色背景。保存游戏以在下次游玩时保留笔记和偏好设置；新存档从默认设置开始。移除模组可能导致其数据丢失。"
         },
         "zh_TW": {
             "name": "Noter",
             "summary": "每個存檔獨立的待辦筆記，支援地圖位置標記。",
-            "description": "每個存檔都有獨立的任務，支援編輯、完成標記、排序和關聯地圖位置。從模組工具列開啟 Noter。儲存遊戲以保留筆記；移除模組可能導致筆記遺失。"
+            "description": "每個存檔都有獨立的任務，支援編輯、完成標記、排序和關聯地圖位置。從模組工具列開啟 Noter。記憶模式（預設）保留一般視窗的位置及一般或展開狀態；展開視窗重新開啟時置中。暫時模式在關閉時重設大小和位置。不透明視窗可啟用實色背景。儲存遊戲以在下次遊玩時保留筆記和偏好設定；新存檔從預設設定開始。移除模組可能導致其資料遺失。"
         }
     },
     "tags": [
