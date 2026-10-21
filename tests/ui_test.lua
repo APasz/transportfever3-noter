@@ -131,7 +131,11 @@ local react = {
 	onUnmount = function(fn) context.unmount[#context.unmount + 1] = fn end,
 	enqueueJoin = function(fn) joins[#joins + 1] = fn end,
 	iaHandler = function(fn) return fn end,
-	useInputAction = function(name, fn) context.inputActions[name] = fn end,
+	useInputAction = function(name, fn)
+		assert(context.wrappedKind ~= "ActionDescriptor",
+			"ActionDescriptor wrappers cannot bind component input actions; use onBack")
+		context.inputActions[name] = fn
+	end,
 }
 
 local function flush()
@@ -266,6 +270,7 @@ local function resolve(node, path, visited, hasActionDescriptor)
 		local key = path .. "/" .. node.recipe.name .. "/" .. (node.params.meta and node.params.meta.localKey or "")
 		local isNew = instances[key] == nil
 		local instance = instances[key] or {slots = {}}
+		instance.wrappedKind = node.recipe.wrappedKind
 		instances[key] = instance
 		visited[key] = true
 		instance.cursor, instance.unmount, instance.inputActions, instance.mount, instance.mouseEvents = 0, {}, {}, {}, {}
@@ -647,10 +652,12 @@ clickTask(view, 1)
 _, view = render()
 findButton(view, "Set point").params.onClick()
 flush()
-_, view, selector = render()
-local escape
-for _, instance in pairs(instances) do escape = escape or instance.inputActions.IA_MENU_BACK end
-assert(escape, "Picker must bind Escape/back")()
+_, view, selector, action = render()
+local writesBeforeEscape = writeCount
+assert(action.params.onBack, "Picker must handle native Escape/back")()
+action.params.onBack()
+expect(not selector.params.onSelect(1, {}, {}) and writeCount == writesBeforeEscape,
+	"Native back immediately rejects late input and repeated cancellation without saving")
 flush()
 expect(tool == nil and notebook().tasks[1].point == nil, "Escape cancels without changing a task")
 _, view = render()

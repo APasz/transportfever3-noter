@@ -167,7 +167,6 @@ local PickerAction = react.RegisterWrapperRecipe("NoterPointPickerAction", built
 		logger.debug("Canceled map point selection")
 		params.onCancel()
 	end
-	react.useInputAction("IA_MENU_BACK", react.iaHandler(cancel))
 	local selector = builtin.Selector{
 		stopOnMenuBack = false,
 		onSelect = function(_entity : Engine.Entity, _indices : {integer}, _details : Gui.SelectionDetails) : boolean
@@ -187,6 +186,7 @@ local PickerAction = react.RegisterWrapperRecipe("NoterPointPickerAction", built
 	return builtin.ActionDescriptor{
 		tool = POINT_PICKER_TOOL,
 		terrainCirclePolicy = "Never",
+		-- This 3D action has no UI component for useInputAction; native back handles Escape.
 		onBack = cancel,
 		children = {selector},
 	}
