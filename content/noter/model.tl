@@ -1,6 +1,7 @@
 local logger = ug_require "apasz_noter::/noter/logger.tl" as ModLogging.Logger
 local model : NoterModel = {MAX_TEXT_LENGTH = 500}
-local FORMAT_VERSION = 1
+local FORMAT_VERSION = 2
+local LEGACY_FORMAT_VERSION = 1
 local DEFAULT_WINDOW_LAYOUT : NoterModel.WindowLayout = {x = 0.04, y = 0.1, expanded = false}
 local EXPANDED_WINDOW_LAYOUT : NoterModel.WindowLayout = {x = 0.5, y = 0.5, expanded = true}
 
@@ -99,6 +100,45 @@ local function requireWindowLayout(layout : NoterModel.WindowLayout)
 	requireValid(type(layout.expanded) == "boolean", "Window expanded state must be a boolean")
 end
 
+local function copyArray<T>(entries : {T}) : {T}
+	local result : {T} = {}
+	for index, entry in ipairs(entries) do result[index] = entry end
+	return result
+end
+
+local function copyTask(task : NoterModel.Task) : NoterModel.Task
+	return {id = task.id, text = task.text, completed = task.completed, point = task.point, items = task.items}
+end
+
+function model.completedItemCount(task : NoterModel.Task) : integer
+	local count = 0
+	for _, item in ipairs(task.items) do
+		if item.completed then count = count + 1 end
+	end
+	return count
+end
+
+local function requireEntry(entry : NoterModel.Entry, nextId : integer, seen : {integer : boolean})
+	requireValid(type(entry) == "table", "Invalid notebook entry")
+	requireValid(isInteger(entry.id) and entry.id > 0 and entry.id < nextId and not seen[entry.id],
+		"Invalid or duplicate entry ID")
+	requireValid(type(entry.text) == "string" and taskTextLength(entry.text) ~= nil, "Invalid entry text")
+	requireValid(type(entry.completed) == "boolean", "Invalid entry completion state")
+	seen[entry.id] = true
+end
+
+local function requireArray<T>(entries : {T})
+	requireValid(type(entries) == "table", "Notebook entries must be an array")
+	local count = 0
+	for key in pairs(entries as {any : any}) do
+		requireValid(isInteger(key) and (key as integer) > 0, "Notebook entries must be an array")
+		count = count + 1
+	end
+	for index = 1, count do
+		requireValid(entries[index] ~= nil, "Notebook entries must be a contiguous array")
+	end
+end
+
 function model.readNotebook(raw : table | nil) : NoterModel.Notebook
 	if raw == nil then
 		return model.newNotebook()
@@ -107,28 +147,40 @@ function model.readNotebook(raw : table | nil) : NoterModel.Notebook
 	requireValid(type(data) == "table", "Save data must be a table")
 	if next(data) == nil then return model.newNotebook() end
 	local notebook = data as NoterModel.Notebook
-	requireValid(notebook.version == FORMAT_VERSION, "Unsupported save format: " .. tostring(notebook.version))
+	local legacy = notebook.version == LEGACY_FORMAT_VERSION
+	requireValid(legacy or notebook.version == FORMAT_VERSION, "Unsupported save format: " .. tostring(notebook.version))
 	requireValid(isInteger(notebook.nextId) and notebook.nextId > 0, "Invalid next task ID")
-	requireValid(type(notebook.tasks) == "table", "Save is missing tasks")
+	requireArray(notebook.tasks)
 	requireValid(type(notebook.hideCompleted) == "boolean" and type(notebook.pinned) == "boolean",
 		"Save has invalid preferences")
 	if notebook.windowLayout ~= nil then requireWindowLayout(notebook.windowLayout) end
 	local seen : {integer : boolean} = {}
-	local count = 0
-	for key, rawTask in pairs(notebook.tasks as {any : any}) do
-		requireValid(isInteger(key) and (key as integer) > 0, "Tasks must be an array")
-		local value = rawTask as NoterModel.Task
-		requireValid(type(value) == "table", "Invalid task")
-		requireValid(isInteger(value.id) and value.id > 0 and value.id < notebook.nextId and not seen[value.id],
-			"Invalid or duplicate task ID")
-		requireValid(type(value.text) == "string" and taskTextLength(value.text) ~= nil, "Invalid task text")
-		requireValid(type(value.completed) == "boolean", "Invalid task completion state")
+	for _, value in ipairs(notebook.tasks) do
+		requireEntry(value, notebook.nextId, seen)
 		if value.point ~= nil then requirePoint(value.point) end
-		seen[value.id] = true
-		count = count + 1
+		if legacy then
+			requireValid(value.items == nil, "Legacy notes cannot contain checklist items")
+		else
+			requireArray(value.items)
+			for _, item in ipairs(value.items) do
+				requireEntry(item, notebook.nextId, seen)
+				requireValid((item as table).items == nil and (item as table).point == nil,
+					"Checklist items cannot contain subitems or map points")
+			end
+			requireValid(#value.items == 0 or value.completed == (model.completedItemCount(value) == #value.items),
+				"Task completion does not match its checklist")
+		end
 	end
-	for index = 1, count do
-		requireValid(notebook.tasks[index] ~= nil, "Tasks must be a contiguous array")
+	if legacy then
+		local migrated = model.newNotebook()
+		migrated.nextId, migrated.hideCompleted, migrated.pinned = notebook.nextId, notebook.hideCompleted, notebook.pinned
+		migrated.windowLayout = notebook.windowLayout
+		for index, task in ipairs(notebook.tasks) do
+			local copied = copyTask(task)
+			copied.items = {}
+			migrated.tasks[index] = copied
+		end
+		return migrated
 	end
 	return notebook
 end
@@ -143,27 +195,34 @@ end
 
 local function copyNotebookWithTasks(notebook : NoterModel.Notebook) : NoterModel.Notebook
 	local result = copyNotebook(notebook)
-	result.tasks = {}
-	for index, task in ipairs(notebook.tasks) do result.tasks[index] = task end
+	result.tasks = copyArray(notebook.tasks)
 	return result
 end
 
-local function taskIndex(notebook : NoterModel.Notebook, id : integer) : integer
-	for index, task in ipairs(notebook.tasks) do
-		if task.id == id then return index end
+local function entryIndex<T is NoterModel.Entry>(entries : {T}, id : integer) : integer
+	for index, entry in ipairs(entries) do
+		if entry.id == id then return index end
 	end
-	return logger.fail("Unknown task ID: " .. tostring(id))
+	return logger.fail("Unknown entry ID: " .. tostring(id))
+end
+
+local function nextEntryId(notebook : NoterModel.Notebook) : integer
+	local nextId = notebook.nextId + 1
+	requireValid(nextId > notebook.nextId, "Entry ID sequence exhausted")
+	return nextId
 end
 
 local function updateTask(notebook : NoterModel.Notebook, id : integer,
 	update : function(NoterModel.Task)) : NoterModel.Notebook
-	local index = taskIndex(notebook, id)
+	local index = entryIndex(notebook.tasks, id)
 	local original = notebook.tasks[index]
-	local task : NoterModel.Task = {
-		id = original.id, text = original.text, completed = original.completed, point = original.point,
-	}
+	local task = copyTask(original)
 	update(task)
-	if task.text == original.text and task.completed == original.completed and samePoint(task.point, original.point) then
+	if task.items ~= original.items and #task.items > 0 then
+		task.completed = model.completedItemCount(task) == #task.items
+	end
+	if task.text == original.text and task.completed == original.completed
+		and task.items == original.items and samePoint(task.point, original.point) then
 		return notebook
 	end
 	local result = copyNotebookWithTasks(notebook)
@@ -173,10 +232,9 @@ end
 
 function model.addTask(notebook : NoterModel.Notebook, text : string) : NoterModel.Notebook
 	local normalized = requireText(text)
-	local nextId = notebook.nextId + 1
-	requireValid(nextId > notebook.nextId, "Task ID sequence exhausted")
+	local nextId = nextEntryId(notebook)
 	local result = copyNotebookWithTasks(notebook)
-	result.tasks[#result.tasks + 1] = {id = result.nextId, text = normalized, completed = false}
+	result.tasks[#result.tasks + 1] = {id = result.nextId, text = normalized, completed = false, items = {}}
 	result.nextId = nextId
 	return result
 end
@@ -187,7 +245,60 @@ function model.editTask(notebook : NoterModel.Notebook, id : integer, text : str
 end
 
 function model.setCompleted(notebook : NoterModel.Notebook, id : integer, completed : boolean) : NoterModel.Notebook
-	return updateTask(notebook, id, function(task : NoterModel.Task) task.completed = completed end)
+	return updateTask(notebook, id, function(task : NoterModel.Task)
+		task.completed = completed
+		local items : {NoterModel.ChecklistItem} | nil = nil
+		for index, item in ipairs(task.items) do
+			if item.completed ~= completed then
+				if items == nil then items = copyArray(task.items) end
+				(items as {NoterModel.ChecklistItem})[index] = {id = item.id, text = item.text, completed = completed}
+			end
+		end
+		if items ~= nil then task.items = items as {NoterModel.ChecklistItem} end
+	end)
+end
+
+local function updateItem(notebook : NoterModel.Notebook, taskId : integer, itemId : integer,
+	update : function(NoterModel.ChecklistItem)) : NoterModel.Notebook
+	return updateTask(notebook, taskId, function(task : NoterModel.Task)
+		local index = entryIndex(task.items, itemId)
+		local original = task.items[index]
+		local item : NoterModel.ChecklistItem = {id = original.id, text = original.text, completed = original.completed}
+		update(item)
+		if item.text == original.text and item.completed == original.completed then return end
+		task.items = copyArray(task.items)
+		task.items[index] = item
+	end)
+end
+
+function model.addItem(notebook : NoterModel.Notebook, taskId : integer, text : string) : NoterModel.Notebook
+	local normalized = requireText(text)
+	local nextId = nextEntryId(notebook)
+	local result = updateTask(notebook, taskId, function(task : NoterModel.Task)
+		task.items = copyArray(task.items)
+		task.items[#task.items + 1] = {id = notebook.nextId, text = normalized, completed = false}
+	end)
+	result.nextId = nextId
+	return result
+end
+
+function model.editItem(notebook : NoterModel.Notebook, taskId : integer, itemId : integer,
+	text : string) : NoterModel.Notebook
+	local normalized = requireText(text)
+	return updateItem(notebook, taskId, itemId, function(item : NoterModel.ChecklistItem) item.text = normalized end)
+end
+
+function model.setItemCompleted(notebook : NoterModel.Notebook, taskId : integer, itemId : integer,
+	completed : boolean) : NoterModel.Notebook
+	return updateItem(notebook, taskId, itemId, function(item : NoterModel.ChecklistItem) item.completed = completed end)
+end
+
+function model.removeItem(notebook : NoterModel.Notebook, taskId : integer, itemId : integer) : NoterModel.Notebook
+	return updateTask(notebook, taskId, function(task : NoterModel.Task)
+		local index = entryIndex(task.items, itemId)
+		task.items = copyArray(task.items)
+		table.remove(task.items, index)
+	end)
 end
 
 function model.setPoint(notebook : NoterModel.Notebook, id : integer, point : NoterModel.Point | nil) : NoterModel.Notebook
@@ -203,37 +314,49 @@ function model.setPoint(notebook : NoterModel.Notebook, id : integer, point : No
 end
 
 function model.removeTask(notebook : NoterModel.Notebook, id : integer) : NoterModel.Notebook
-	local index = taskIndex(notebook, id)
+	local index = entryIndex(notebook.tasks, id)
 	local result = copyNotebookWithTasks(notebook)
 	table.remove(result.tasks, index)
 	return result
 end
 
-local function moveTarget(notebook : NoterModel.Notebook, id : integer,
-	direction : NoterModel.MoveDirection) : integer | nil
+local function moveTarget<T is NoterModel.Entry>(entries : {T}, id : integer,
+	direction : NoterModel.MoveDirection, completionGroups : boolean) : integer | nil
 	requireValid(direction == "Up" or direction == "Down", "Invalid move direction")
-	local index = taskIndex(notebook, id)
+	local index = entryIndex(entries, id)
 	local step = direction == "Up" and -1 or 1
-	for target = index + step, (step == -1 and 1 or #notebook.tasks), step do
-		if notebook.tasks[target].completed == notebook.tasks[index].completed then return target end
+	for target = index + step, (step == -1 and 1 or #entries), step do
+		if not completionGroups or entries[target].completed == entries[index].completed then return target end
 	end
 	return nil
 end
 
 function model.canMoveTask(notebook : NoterModel.Notebook, id : integer,
 	direction : NoterModel.MoveDirection) : boolean
-	return moveTarget(notebook, id, direction) ~= nil
+	return moveTarget(notebook.tasks, id, direction, true) ~= nil
 end
 
 function model.moveTask(notebook : NoterModel.Notebook, id : integer,
 	direction : NoterModel.MoveDirection) : NoterModel.Notebook
-	local target = moveTarget(notebook, id, direction)
+	local target = moveTarget(notebook.tasks, id, direction, true)
 	if not target then return notebook end
 	local targetIndex = target as integer
-	local index = taskIndex(notebook, id)
+	local index = entryIndex(notebook.tasks, id)
 	local result = copyNotebookWithTasks(notebook)
 	result.tasks[index], result.tasks[targetIndex] = result.tasks[targetIndex], result.tasks[index]
 	return result
+end
+
+function model.moveItem(notebook : NoterModel.Notebook, taskId : integer, itemId : integer,
+	direction : NoterModel.MoveDirection) : NoterModel.Notebook
+	return updateTask(notebook, taskId, function(task : NoterModel.Task)
+		local target = moveTarget(task.items, itemId, direction, false)
+		if target == nil then return end
+		local targetIndex = target as integer
+		local index = entryIndex(task.items, itemId)
+		task.items = copyArray(task.items)
+		task.items[index], task.items[targetIndex] = task.items[targetIndex], task.items[index]
+	end)
 end
 
 function model.setPreferences(notebook : NoterModel.Notebook, hideCompleted : boolean,

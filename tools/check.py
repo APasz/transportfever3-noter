@@ -5,11 +5,36 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
+from typing import TypedDict, cast
 from zipfile import ZipFile
 
-from localization import check_localization, lua_catalog
+from localization import check_localization, load_object, lua_catalog
+
+
+class ResourceEntry(TypedDict):
+    fileName: str
+
+
+class ContentArchive(TypedDict):
+    fileName: str
+    entries: list[ResourceEntry]
+
+
+def check_gui_icons(mod_root: Path, game_root: Path) -> None:
+    """Require GUI icons to be registered game resources, including high-DPI variants."""
+    manifest = load_object(game_root / "base/_content.json")
+    archives = cast(list[ContentArchive], manifest["archives"])
+    gui_archive = next(archive for archive in archives if archive["fileName"] == "gui.zip")
+    registered = {entry["fileName"].replace("@2x.tga", ".tga") for entry in gui_archive["entries"]}
+    source = (mod_root / "content/noter/ui.script.tl").read_text(encoding="utf-8")
+    icons = set(re.findall(r'"::/(gui/[^"\n]+\.tga)"', source))
+    missing = icons - registered
+    if missing:
+        raise ValueError(f"Unregistered native GUI icons: {sorted(missing)}")
+    print(f"Native GUI icons: {len(icons)} registered resources", flush=True)
 
 
 def main() -> None:
@@ -26,6 +51,7 @@ def main() -> None:
     args = parser.parse_args()
     mod_root = Path(__file__).resolve().parents[1]
     catalog = check_localization(mod_root, args.game_dir)
+    check_gui_icons(mod_root, args.game_dir)
     with tempfile.TemporaryDirectory(prefix="noter-check-") as directory:
         compiler = Path(directory) / "tl.lua"
         react = Path(directory) / "react.lua"

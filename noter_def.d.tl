@@ -5,11 +5,18 @@ global record NoterModel
 		z : number
 	end
 
-	record Task
+	interface Entry
 		id : integer
 		text : string
 		completed : boolean
+	end
+
+	record ChecklistItem is Entry
+	end
+
+	record Task is Entry
 		point : Point | nil
+		items : {ChecklistItem}
 	end
 
 	record WindowLayout
@@ -46,6 +53,12 @@ global record NoterModel
 	addTask : function(Notebook, string) : Notebook
 	editTask : function(Notebook, integer, string) : Notebook
 	setCompleted : function(Notebook, integer, boolean) : Notebook
+	completedItemCount : function(Task) : integer
+	addItem : function(Notebook, integer, string) : Notebook
+	editItem : function(Notebook, integer, integer, string) : Notebook
+	setItemCompleted : function(Notebook, integer, integer, boolean) : Notebook
+	removeItem : function(Notebook, integer, integer) : Notebook
+	moveItem : function(Notebook, integer, integer, MoveDirection) : Notebook
 	setPoint : function(Notebook, integer, Point | nil) : Notebook
 	removeTask : function(Notebook, integer) : Notebook
 	canMoveTask : function(Notebook, integer, MoveDirection) : boolean

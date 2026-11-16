@@ -50,7 +50,6 @@ local styleEnv = {
 }
 assert(loadfile(modRoot .. "/content/noter/noter.css.lua", "t", styleEnv))()
 styleEnv.data()
-local scope = "Window#noter.notebook "
 
 local instances, context, joins = {}, nil, {}
 local builtinKinds = {}
@@ -82,6 +81,7 @@ local styleAssignments = 0
 local windowApiAvailable = true
 local toolStackAvailable = true
 local language = "en"
+local gamepadInput = false
 
 local langUtil = {
 	formatInt = tostring,
@@ -156,6 +156,7 @@ local react = {
 	onStep = function(fn) context.step[#context.step + 1] = fn end,
 	onStepTimer = function() error("Window position capture must not use a polling timer") end,
 	onMouseEvent = function(fn) context.mouseEvents[#context.mouseEvents + 1] = fn end,
+	setStyleClasses = function(...) context.styleClasses = table.concat({...}, ",") end,
 	onUnmount = function(fn) context.unmount[#context.unmount + 1] = fn end,
 	enqueueJoin = function(fn) joins[#joins + 1] = fn end,
 	iaHandler = function(fn) return fn end,
@@ -175,6 +176,14 @@ local function flush()
 		count = count + 1
 		assert(count < 50, "Deferred UI operations did not settle")
 	end
+end
+
+local function pressEscape(input)
+	expect(input.params.popFocusOnStopEditing == false,
+		"Cancellable native inputs retain focus when Escape ends editing")
+	input.params.meta.onFocusChange(true)
+	input.params.onCancel()
+	flush()
 end
 
 local builtins = {type = {Orientation = {Horizontal = "Horizontal", Vertical = "Vertical"},
@@ -241,12 +250,22 @@ local environment = setmetatable({
 			["::/gui/main/builtin.lua"] = builtins,
 			["::/gui/main/react.lua"] = react,
 			["::/gui/main/game_react_globals.tl"] = globals,
+			["::/gui/main/engine_react_util.tl"] = {useStepState = function(getValue)
+				local value = react.useStateLazy(getValue)
+				react.onStep(function()
+					local updated = getValue()
+					if updated ~= value:old() then value:set(updated) end
+				end)
+				return value
+			end},
+			["::/scripts/app_util.tl"] = {isGamepadInputMode = function() return gamepadInput end},
 			["apasz_noter::/noter/model.tl"] = model,
 			["apasz_noter::/noter/logger.tl"] = runtime.logger,
 			["::/scripts/lang_util.tl"] = langUtil,
 			["::/gui/main/main_mod_button_area.tl"] = {MainModButtonAreaExtension = {}},
 		}
-		return assert(dependencies[path], "Unexpected UI dependency: " .. path)
+		assert(dependencies[path] ~= nil, "Unexpected UI dependency: " .. path)
+		return dependencies[path]
 	end,
 	api = {
 		engine = {config = {getModParams = function() return modParams end}},
@@ -317,7 +336,7 @@ local function resolve(node, path, visited, hasActionDescriptor)
 		instances[key] = instance
 		visited[key] = true
 		instance.cursor, instance.unmount, instance.inputActions, instance.mount, instance.mouseEvents = 0, {}, {}, {}, {}
-		instance.step = {}
+		instance.step, instance.styleClasses = {}, nil
 		local previousContext = context
 		context = instance
 		local result = node.recipe.fn(node.params)
@@ -329,6 +348,7 @@ local function resolve(node, path, visited, hasActionDescriptor)
 		end
 		local resolved = resolve(result, key, visited, hasActionDescriptor)
 		resolved.mouseEvents = instance.mouseEvents
+		resolved.styleClasses = instance.styleClasses
 		if isNew then for _, fn in ipairs(instance.mount) do fn() end end
 		return resolved
 	end
@@ -393,6 +413,12 @@ local function render()
 	return root, notebookWindow, selector, action
 end
 
+local function renderInputMode(enabled)
+	gamepadInput = enabled
+	render()
+	return render()
+end
+
 local function notifyWindowMoved(view)
 	local previous = restrictedApi
 	restrictedApi = true
@@ -408,9 +434,9 @@ end
 
 local function getButton(root, text)
 	return find(root, function(node)
-		return node.kind == "Button" and find(node.params.content, function(child)
+		return node.kind == "Button" and (node.params.meta.tooltip == text or find(node.params.content, function(child)
 			return child.kind == "TextView" and child.params.text == text
-		end) ~= nil
+		end) ~= nil)
 	end)
 end
 
@@ -424,11 +450,31 @@ local function tooltipButton(root, tooltip)
 	end), "Missing icon button: " .. tooltip)
 end
 
+local function expectIconButton(root, tooltip, expectedPath)
+	local control = tooltipButton(root, tooltip)
+	expect(control.params.meta.class == "noter-icon-button" and control.params.content.kind == "ImageView"
+		and control.params.content.params.path == expectedPath,
+		"Icon actions use native artwork with a translated tooltip: " .. tooltip)
+	return control
+end
+
 local function taskRow(root, id)
 	return assert(find(root, function(node)
 		local meta = node.params.meta
 		return meta and meta.localKey == tostring(id) and meta.class and meta.class:find("noter-row", 1, true)
 	end), "Missing task row: " .. id)
+end
+
+local function noteGroup(root, id)
+	return assert(find(root, function(node)
+		return node.params.meta and node.params.meta.localKey == "note." .. tostring(id)
+	end), "Missing note group: " .. id)
+end
+
+local function taskActions(root, id)
+	return find(root, function(node)
+		return node.params.meta and node.params.meta.localKey == "actions." .. tostring(id)
+	end)
 end
 
 local function taskButton(root, id)
@@ -561,13 +607,16 @@ local writesBeforePreview = writeCount
 clickTask(view, 1)
 _, view = render()
 expect(not taskRow(view, 1).params.meta.class:find("noter-selected", 1, true)
-	and not getButton(taskRow(view, 1), "Edit"), "Clicking a selected note collapses its preview and actions")
+	and not getButton(taskActions(view, 1), "Edit"), "Clicking a selected note collapses its preview and actions")
 clickTask(view, 1)
 _, view = render()
 expect(taskRow(view, 1).params.meta.class:find("noter-selected", 1, true)
-	and getButton(taskRow(view, 1), "Edit") and taskButton(view, 1).params.content.params.text == longTaskText
+	and getButton(taskActions(view, 1), "Edit") and taskButton(view, 1).params.content.params.text == longTaskText
 	and notebook().tasks[1].text == longTaskText and writeCount == writesBeforePreview and focusCount == 1,
 	"Selecting a note enables its preview without changing the text, save data or focus")
+expect(taskRow(view, 1).styleClasses:find("noter-selected", 1, true)
+	and taskButton(view, 1).params.content.params.meta.class:find("noter-preview", 1, true),
+	"Selection reaches the native wrapper and wrapping is applied directly to the selected text")
 tooltipButton(view, "Expand window").params.onClick()
 for _, allocatedWidth in ipairs({1600, 2200, 900}) do
 	taskButtonWidth = allocatedWidth
@@ -577,6 +626,9 @@ for _, allocatedWidth in ipairs({1600, 2200, 900}) do
 	local size = assert(assignedStyleSizes[text.params.meta.styleSheet])
 	expect(size.x == allocatedWidth and size.y == -1 and text.params.text == longTaskText,
 		"Expanded previews use the allocated row width as the wrap boundary without changing the text")
+	expect(text.params.meta.class:find("noter-expanded-text", 1, true)
+		and text.params.meta.class:find("noter-preview", 1, true),
+		"Expanded previews carry both width and wrapping states on the native TextView")
 end
 for _, viewportWidth in ipairs({1280, 3840}) do
 	viewportSize.x = viewportWidth
@@ -599,7 +651,7 @@ render()
 _, view = render()
 local collapsedExpandedText = taskButton(view, 1).params.content
 expect(assignedStyleSizes[collapsedExpandedText.params.meta.styleSheet].x == taskButtonWidth
-	and not getButton(taskRow(view, 1), "Edit"),
+	and not getButton(taskActions(view, 1), "Edit"),
 	"Collapsed notes also use the current expanded width while keeping their actions hidden")
 clickTask(view, 1)
 _, view = render()
@@ -607,18 +659,18 @@ local scansBeforeResize = visibilityScans
 tooltipButton(view, "Restore normal size").params.onClick()
 expect(visibilityScans == scansBeforeResize, "Window layout changes do not rescan unchanged task visibility")
 _, view = render()
-expect(taskButton(view, 1).params.content.params.meta.styleSheet == nil and getButton(taskRow(view, 1), "Edit")
+expect(taskButton(view, 1).params.content.params.meta.styleSheet == nil and getButton(taskActions(view, 1), "Edit")
 	and writeCount == writesBeforePreview + 2 and focusCount == 1,
 	"Restoring normal size removes the expanded width while preserving selection, notes and focus")
 input = assert(find(view, function(node) return node.kind == "TextInputField" end))
 expect(input.params.value == "", "Composer clears after adding")
 input.params.onValueChange("Buy a train")
 _, view = render()
-expect(not getButton(taskRow(view, 1), "Edit") and getButton(taskRow(view, 2), "Edit"),
+expect(not getButton(taskActions(view, 1), "Edit") and getButton(taskActions(view, 2), "Edit"),
 	"Only the selected task shows its actions")
 expect(reorderChecks == 2, "Only the selected task checks its two reorder directions")
-expect(tooltipButton(taskRow(view, 2), "Move up").params.content.kind == "ImageView"
-	and not tooltipButton(taskRow(view, 2), "Move down").params.meta.enabled,
+expect(tooltipButton(taskActions(view, 2), "Move up").params.content.kind == "ImageView"
+	and not tooltipButton(taskActions(view, 2), "Move down").params.meta.enabled,
 	"Reordering uses arrow icons, tooltips, and boundary disabling")
 local complete = assert(find(view, function(node)
 	return node.kind == "CheckBox" and node.params.meta and node.params.meta.tooltip == "Mark complete"
@@ -633,8 +685,8 @@ complete.params.onValueChange(1)
 expect(writeCount == writesBeforeRepeatedCompletion, "Repeated completion events do not rewrite GUI save data")
 _, view = render()
 expect(view.params.title == "Noter · 1 remaining", "Completion updates the title count")
-expect(find(view, function(node) return node.kind == "TextView" and node.params.text == "Completed" end),
-	"Completed heading renders without shadowing localization")
+expect(not find(view, function(node) return node.kind == "TextView" and node.params.text == "Completed" end),
+	"Completing a note does not insert a heading into the list")
 hide = assert(find(view, function(node) return node.kind == "CheckBox" and node.params.label == "Hide completed" end))
 hide.params.onValueChange(1)
 _, view = render()
@@ -644,11 +696,11 @@ end), "Hide completed removes finished tasks from the window")
 hide = assert(find(view, function(node) return node.kind == "CheckBox" and node.params.label == "Hide completed" end))
 hide.params.onValueChange(0)
 _, view = render()
-local setPointContent = findButton(view, "Set point").params.content.params.children
-expect(setPointContent[1].kind == "ImageView"
-	and setPointContent[1].params.path == "::/gui/builtin/window/icons/symbol_pin_18.tga"
-	and setPointContent[2].params.text == "Set point",
-	"Set point shows the pin icon alongside its translated label")
+local setPointContent = findButton(view, "Set point").params.content
+expect(setPointContent.kind == "ImageView"
+	and setPointContent.params.path == "::/gui/builtin/window/icons/symbol_locate.tga"
+	and findButton(view, "Set point").params.meta.tooltip == "Set point",
+	"Set point uses the native map marker with a translated tooltip")
 toolStackAvailable = false
 findButton(view, "Set point").params.onClick()
 local pickerOk, pickerFailure = pcall(flush)
@@ -676,43 +728,56 @@ expect(#flashes == 1 and flashes[1].position.x == 120 and flashes[1].position.z 
 	"Setting a point flashes a temporary world icon")
 _, view = render()
 expect(not getButton(view, "Go"), "Linked rows omit the redundant Go text button")
-local changePointContent = findButton(view, "Change point").params.content.params.children
-expect(changePointContent[1].params.path == setPointContent[1].params.path
-	and changePointContent[2].params.text == "Change point",
-	"Change point keeps the same pin icon and its own translated label")
+local changePointContent = findButton(view, "Change point").params.content
+expect(changePointContent.params.path == setPointContent.params.path
+	and findButton(view, "Change point").params.meta.tooltip == "Change point",
+	"Change point keeps the same map icon with its own translated tooltip")
 local linkedRow = taskRow(view, 2)
-local linkedLine = linkedRow.params.children[1].params.children
+local linkedLine = linkedRow.params.layout.params.children[1].params.children
 expect(linkedLine[1].kind == "CheckBox" and linkedLine[2].params.meta.class == "noter-pin-slot"
 	and tooltipButton(linkedLine[2], "Go to map point")
 	and linkedLine[3].params.meta.class == "noter-task-button",
 	"The pin column is directly after the checkbox and before the task text")
-local unlinkedLine = taskRow(view, 1).params.children[1].params.children
+local unlinkedLine = taskRow(view, 1).params.layout.params.children[1].params.children
 expect(unlinkedLine[2].params.meta.class == linkedLine[2].params.meta.class
 	and unlinkedLine[2].params.layout == nil,
 	"Unlinked tasks keep an empty pin column to align the text")
 local writesBeforeGo = writeCount
+expectIconButton(linkedRow, "Unlink", "::/gui/line_vehicle_mgmt/icons/minus.tga")
 tooltipButton(linkedRow, "Go to map point").params.onClick()
 expect(located.center.x == 120 and located.center.y == -30 and located.distance == 700,
 	"The pin navigates to the point at the current zoom")
 expect(#flashes == 2 and writeCount == writesBeforeGo, "The pin highlights the point without changing saved data")
 _, view = render()
-expect(getButton(taskRow(view, 2), "Edit"), "Using the pin does not toggle the row's actions")
+expect(getButton(taskActions(view, 2), "Edit"), "Using the pin does not toggle the row's actions")
 local writesBeforeSelection = writeCount
 clickTask(view, 2)
 _, view = render()
-expect(not getButton(taskRow(view, 2), "Edit"), "Clicking the selected task collapses its actions")
+expect(not getButton(taskActions(view, 2), "Edit"), "Clicking the selected task collapses its actions")
 expect(reorderChecks == 0, "Compact task lists perform no reorder scans")
 -- Native Button activation uses the same onClick callback for controller Select.
+local buttonBeforeController = taskButton(view, 2).nodeRef
+local focusBeforeController = focusCount
+_, view = renderInputMode(true)
+expect(taskButton(view, 2).params.meta.tooltip == runtime.translations.en.APASZ_NOTER_TASK_ACTIONS_CONTROLLER_TOOLTIP
+	and taskButton(view, 2).nodeRef == buttonBeforeController
+	and writeCount == writesBeforeSelection and focusCount == focusBeforeController,
+	"Switching to controller updates the tooltip without replacing the button, changing focus or saving")
 taskButton(view, 2).params.onClick()
 _, view = render()
-expect(getButton(taskRow(view, 2), "Edit") and writeCount == writesBeforeSelection,
+expect(getButton(taskActions(view, 2), "Edit") and writeCount == writesBeforeSelection,
 	"Controller Select can expand task actions without changing saved data")
 taskButton(view, 2).params.onClick()
 _, view = render()
-expect(not getButton(taskRow(view, 2), "Edit"), "Controller Select toggles task actions closed again")
+expect(not getButton(taskActions(view, 2), "Edit"), "Controller Select toggles task actions closed again")
+_, view = renderInputMode(false)
+expect(taskButton(view, 2).params.meta.tooltip == runtime.translations.en.APASZ_NOTER_TASK_ACTIONS_TOOLTIP
+	and taskButton(view, 2).nodeRef == buttonBeforeController
+	and writeCount == writesBeforeSelection and focusCount == focusBeforeController,
+	"Switching back to mouse restores double-click guidance without changing selection or focus")
 expect(clickTask(view, 1), "Clicking a task selects it")
 _, view = render()
-expect(getButton(taskRow(view, 1), "Edit") and not getButton(taskRow(view, 2), "Edit"),
+expect(getButton(taskActions(view, 1), "Edit") and not getButton(taskActions(view, 2), "Edit"),
 	"Changing selection collapses the previous row")
 findButton(view, "Set point").params.onClick()
 flush()
@@ -731,7 +796,7 @@ _, view, selector = render()
 local collapsedSelector = selector
 clickTask(view, 1)
 _, view = render()
-expect(tool == nil and not getButton(taskRow(view, 1), "Edit"),
+expect(tool == nil and not getButton(taskActions(view, 1), "Edit"),
 	"Collapsing a task cancels its active map picker")
 local writesBeforeLateSelection = writeCount
 expect(not collapsedSelector.params.onSelect(1, {}, {}) and writeCount == writesBeforeLateSelection
@@ -809,24 +874,41 @@ expect(focusCount == focusBeforeEdit + 1 and getButton(view, "Save"),
 	"Direct editing focuses the field and ignores a late single-click callback")
 expect(reorderChecks == 0, "Text editing performs no reorder scans")
 local editor = assert(findButton(view, "Save"))
+expectIconButton(view, "Save", "::/gui/menu/icons/symbol_check.tga")
+expectIconButton(view, "Cancel", "::/gui/builtin/window/icons/cross_thin.tga")
 local row = taskRow(view, 2)
 local editInput = assert(find(row, function(node) return node.kind == "TextInputField" end))
 expect(editInput.params.maxLength == model.MAX_TEXT_LENGTH, "Editing uses the same character limit as Add")
-expect(tooltipButton(row.params.children[1].params.children[2], "Go to map point")
+expect(tooltipButton(row.params.layout.params.children[1].params.children[2], "Go to map point")
 	and #row.mouseEvents == 0,
 	"Editing preserves the pin column and leaves mouse handling to native editor controls")
 editInput.params.onTyping("Upgrade the railway")
 local focusBeforeResize = focusCount
+local editorBeforeInputChange = editInput.nodeRef
+local writesBeforeInputChange = writeCount
+_, view = renderInputMode(true)
+editInput = assert(find(taskRow(view, 2), function(node) return node.kind == "TextInputField" end))
+expect(editInput.nodeRef == editorBeforeInputChange and editInput.params.value == "Upgrade the railway"
+	and focusCount == focusBeforeResize and writeCount == writesBeforeInputChange,
+	"An input-mode change preserves the native editor, draft, focus and saved notebook")
+_, view = renderInputMode(false)
 tooltipButton(view, "Expand window").params.onClick()
 _, view = render()
 editInput = assert(find(taskRow(view, 2), function(node) return node.kind == "TextInputField" end))
 expect(windowIsExpanded(view) and editInput.params.value == "Upgrade the railway" and focusCount == focusBeforeResize,
 	"Expanding during an edit preserves the selected row, draft and focus")
 editor = findButton(view, "Save")
+editInput.params.onCancel()
+editInput.params.meta.onFocusChange(false)
+flush()
+_, view = render()
+expect(findButton(view, "Save") and notebook().tasks[1].text ~= "Upgrade the railway",
+	"Focus loss leaves an edited note open without saving before the Save click")
+editor = findButton(view, "Save")
 editor.params.onClick()
 expect(notebook().tasks[1].text == "Upgrade the railway", "Save commits the edited text")
 _, view = render()
-findButton(taskRow(view, 2), "Edit").params.onClick()
+findButton(taskActions(view, 2), "Edit").params.onClick()
 _, view = render()
 row = taskRow(view, 2)
 editInput = assert(find(row, function(node) return node.kind == "TextInputField" end))
@@ -835,14 +917,21 @@ editInput.params.onTyping("Discard this change")
 expect(not find(row, function(node)
 	return node.kind == "Button" and node.params.meta.class == "noter-task-button"
 end), "The editing row has no selection button that could discard its draft")
-editInput.params.onCancel()
+pressEscape(editInput)
+editInput.params.onValueChange("Late text before the cancelled editor unmounts")
 _, view = render()
 expect(notebook().tasks[1].text == "Upgrade the railway" and writeCount == writesBeforeCancel
 	and not getButton(view, "Save"), "Escape cancels an edit without saving")
+local writesAfterEditorCancel = writeCount
+editInput.params.onValueChange("Late text from the cancelled editor")
+_, view = render()
+expect(notebook().tasks[1].text == "Upgrade the railway" and writeCount == writesAfterEditorCancel,
+	"An unmounted editor ignores a late native acceptance callback")
 clickTask(view, 2, "DoubleClicked")
 _, view = render()
 editInput = assert(find(taskRow(view, 2), function(node) return node.kind == "TextInputField" end))
 editInput.params.onValueChange("Upgrade both platforms")
+editInput.params.onValueChange("Duplicate acceptance after saving")
 _, view = render()
 expect(notebook().tasks[1].text == "Upgrade both platforms" and not getButton(view, "Save"),
 	"Enter accepts the edit and returns to the task view")
@@ -1008,7 +1097,7 @@ if runtime.debugLoggingEnabled then
 	local messages = {}
 	for _, entry in ipairs(runtime.entries) do
 		expect(entry.level == "verbose" and entry.message:find("[Noter] ", 1, true) == 1,
-			"Enabled debug messages use the native verbose API and the Noter prefix")
+			"Debug output uses the shared logger")
 		messages[entry.message] = true
 	end
 	expect(messages["[Noter] Opened notebook"] and messages["[Noter] Closed notebook"]
@@ -1043,36 +1132,48 @@ local resource = resourceEnv.data()
 expect(resource.type == "react-plugin ::MainModButtonAreaExtension"
 	and resource.data.filePath == "apasz_noter::/noter/ui.script@NoterButton", "Plugin resource resolves its export")
 
-expect(rules[scope .. "!noter-row"].borderWidth[4] > 0, "Task rows have a separator")
+expect(rules["!noter-child-content"].borderWidth[4] > 0
+	and rules["!noter-group"].padding[3] > rules["!noter-no-padding"].padding[3],
+	"Checklists have a vertical guide and more space between parent groups than child rows")
+expect(rules["!noter-no-padding"].padding[4] == 0 and rules["!noter-no-padding"].padding[2] == 0,
+	"Shared zero padding keeps child rows and the add row aligned")
 local opaqueColor = rules["Window#noter.notebook!noter-opaque"].backgroundColor1
 expect(opaqueColor[1] == palette.BaseDarkMedium[1] and opaqueColor[2] == palette.BaseDarkMedium[2]
 	and opaqueColor[3] == palette.BaseDarkMedium[3] and opaqueColor[4] == 1,
 	"Opaque windows use the current theme's background colour at full opacity")
 expect(rules["Window#noter.notebook"].backgroundColor1 == nil,
 	"The default window keeps the native theme's transparency")
-expect(rules[scope .. "!noter-selected"].backgroundColor1[2] == palette.AccentMedium[2],
+expect(rules["!noter-selected"].backgroundColor1[2] == palette.AccentMedium[2],
 	"Selection uses the active theme's accent colour")
-local pinSlotStyle = rules[scope .. "!" .. linkedLine[2].params.meta.class]
-local iconWidth = rules[scope .. "!noter-icon"].size[1]
-local iconPadding = rules[scope .. "!noter-icon-button"].padding
-local pinButtonWidth = iconWidth + iconPadding[2] + iconPadding[4]
+expect(rules["!noter-selected:hover"].backgroundColor1[4] == rules["!noter-selected"].backgroundColor1[4]
+	and rules["!noter-destructive"].padding[4] > 0,
+	"Selection remains visible on hover and destructive actions have a separate gap")
+local pinSlotStyle = rules["!" .. linkedLine[2].params.meta.class]
+local iconWidth = rules["!noter-icon"].size[1]
+local iconPadding = rules["!noter-icon-button"].padding
+local pinButtonWidth = rules["!noter-icon-button"].size[1]
 expect(pinSlotStyle.minSize[1] == pinButtonWidth and pinSlotStyle.maxSize[1] == pinButtonWidth,
 	"Pin columns fit the pin button exactly without taking extra task-text width")
-local completedColor = rules[scope .. "!noter-completed TextView!noter-text"].color
+expect(pinButtonWidth >= iconWidth + iconPadding[2] + iconPadding[4]
+	and rules["!noter-icon-button"].minSize[1] == rules["!noter-icon-button"].maxSize[1],
+	"Icon controls share a fixed size with padding around the native artwork")
+local completedColor = rules["!noter-text!noter-completed-text"].color
 expect(completedColor[1] == palette.NeutralLightest[1] and completedColor[4] < palette.NeutralLightest[4],
 	"Completed text is dimmed using the active theme")
-local collapsedTextStyle = rules[scope .. "!noter-text"]
-local previewTextStyle = rules[scope .. "!noter-selected TextView!noter-text"]
+local collapsedTextStyle = rules["!noter-text"]
+local previewTextStyle = rules["!noter-text!noter-preview"]
 expect(collapsedTextStyle.textAutoWrap == false and collapsedTextStyle.size[1] > 0
 	and collapsedTextStyle.minSize[1] == collapsedTextStyle.size[1]
 	and collapsedTextStyle.maxSize[1] == collapsedTextStyle.size[1],
 	"Collapsed notes have a finite single-line text column")
-expect(previewTextStyle.textAutoWrap and previewTextStyle.maxSize[1] == collapsedTextStyle.size[1]
-	and previewTextStyle.maxSize[2] > 0,
+expect(previewTextStyle.textAutoWrap and collapsedTextStyle.maxSize[2] > 0,
 	"Selected notes wrap in the same text column with a bounded preview height")
-expect(collapsedTextStyle.gravity[1] == 0 and rules[scope .. "!noter-task-button"].gravity[1] == 0,
-	"Normal-size note previews stay left-aligned")
-local expandedScope = "Window#noter.notebook!window-expanded "
+local checklistTextStyle = rules["!noter-text!noter-checklist-text"]
+expect(checklistTextStyle.maxSize[1] == checklistTextStyle.size[1]
+	and checklistTextStyle.maxSize[2] == collapsedTextStyle.maxSize[2],
+	"Checklist notes reserve progress width while sharing the preview height cap")
+expect(collapsedTextStyle.gravity[1] == 0 and rules["!noter-task-button"].gravity[1] == -1,
+	"Note text stays left-aligned while its button fills space before the progress count")
 local expandedWindowStyle = rules["Window#noter.notebook!window-expanded"]
 expect(expandedWindowStyle.size[1] == "75vw" and expandedWindowStyle.size[2] == "80vh",
 	"Expanded windows use the larger window dimensions")
@@ -1082,13 +1183,12 @@ expect(expandedWindowStyle.anchorPoint[1] == 0.5 and expandedWindowStyle.anchorP
 local normalWindowStyle = rules["Window#noter.notebook"]
 expect(normalWindowStyle.anchorPoint[1] == 0 and normalWindowStyle.anchorPoint[2] == 0,
 	"Normal placement continues to use the top-left anchor")
-local expandedTextStyle = rules[expandedScope .. "TextView!noter-text"]
-expect(rules[expandedScope .. "!noter-task-button"].gravity[1] == -1
+local expandedTextStyle = rules["!noter-text!noter-expanded-text"]
+expect(rules["!noter-task-button"].gravity[1] == -1
 	and expandedTextStyle.gravity[1] == -1 and expandedTextStyle.minSize[1] == 0
 	and expandedTextStyle.maxSize[1] == -1,
 	"Expanded note buttons fill the row and text can grow beyond the normal width")
-local expandedPreviewStyle = rules[expandedScope .. "!noter-selected TextView!noter-text"]
-expect(expandedPreviewStyle.maxSize[1] == -1 and expandedPreviewStyle.maxSize[2] == previewTextStyle.maxSize[2],
+expect(expandedTextStyle.maxSize[2] == collapsedTextStyle.maxSize[2],
 	"Expanded previews keep the height cap while allowing the entire row width")
 
 windowApiAvailable = true
@@ -1346,6 +1446,7 @@ modParams = {}
 saveId = "legacy"
 local legacyText = string.rep("🚂", model.MAX_TEXT_LENGTH + 100)
 local legacyNotebook = model.newNotebook()
+legacyNotebook.version = 1
 legacyNotebook.nextId = 2
 legacyNotebook.tasks = {{id = 1, text = legacyText, completed = false}}
 saves[saveId] = {apasz_noter = legacyNotebook}
@@ -1362,7 +1463,7 @@ expect(editInput.params.value == legacyText and editInput.params.maxLength >= ut
 	"An older long note opens intact for editing and cannot be saved above the new limit")
 local writesBeforeLegacyCancel = writeCount
 editInput.params.onValueChange(legacyText)
-editInput.params.onCancel()
+pressEscape(editInput)
 _, view = render()
 expect(notebook().tasks[1].text == legacyText and writeCount == writesBeforeLegacyCancel,
 	"Rejected submissions and Cancel preserve an older long note")
@@ -1379,6 +1480,425 @@ _, view = render()
 view.params.onClose()
 flush()
 root = render()
+do
+	saveId = "checklist"
+	saves[saveId] = {}
+	toolbarButton(root).params.onValueChange(1)
+	flush()
+	_, view = render()
+	local function inputWithPlaceholder(placeholder)
+		return assert(find(view, function(node)
+			return node.kind == "TextInputField" and node.params.placeholderText == placeholder
+		end), "Missing input: " .. placeholder)
+	end
+	local function checkbox(id)
+		return assert(find(taskRow(view, id), function(node) return node.kind == "CheckBox" end))
+	end
+	local function progress(text)
+		return find(taskRow(view, 1), function(node)
+			return node.kind == "TextView" and node.params.meta.class:find("noter-progress", 1, true)
+				and node.params.text == text
+		end)
+	end
+	local function hasRow(id)
+		return find(view, function(node)
+			return node.params.meta and node.params.meta.id == "noter.notebook.task." .. id
+		end) ~= nil
+	end
+	inputWithPlaceholder("Enter a task").params.onValueChange("Upgrade Central station")
+	_, view = render()
+	local writesBeforeComposer, focusBeforeComposer = writeCount, focusCount
+	findButton(view, "Add subitem").params.onClick()
+	_, view = render()
+	expect(focusCount == focusBeforeComposer + 1 and writeCount == writesBeforeComposer,
+		"Opening a subitem composer focuses it without changing saved notes")
+	local itemInput = inputWithPlaceholder("Enter a subitem")
+	expect(itemInput.params.resetValueOnCancel == false,
+		"A native focus-loss cancellation preserves the text until Add or Cancel resolves the composer")
+	itemInput.params.onValueChange("bad\nitem")
+	expect(writeCount == writesBeforeComposer, "The subitem composer rejects multiline text before saving")
+	pressEscape(itemInput)
+	flush()
+	_, view = render()
+	expect(writeCount == writesBeforeComposer and getButton(view, "Add subitem"),
+		"Cancel closes an empty checklist composer without changing the notebook")
+	findButton(view, "Add subitem").params.onClick()
+	_, view = render()
+	itemInput = inputWithPlaceholder("Enter a subitem")
+	itemInput.params.onValueChange("First platform 🚉")
+	_, view = render()
+	expect(#notebook().tasks[1].items == 1 and progress("0/1")
+		and inputWithPlaceholder("Enter a subitem").params.value == ""
+		and inputWithPlaceholder("Enter a subitem").nodeRef ~= itemInput.nodeRef,
+		"Adding a subitem opens a fresh native input ready for another item")
+	local writesAfterFirstItem = writeCount
+	itemInput.params.onCancel()
+	itemInput.params.onValueChange("Duplicate from the old field")
+	_, view = render()
+	expect(writeCount == writesAfterFirstItem and inputWithPlaceholder("Enter a subitem"),
+		"Late cancellation and acceptance from a submitted field cannot close or duplicate the next composer")
+	itemInput = inputWithPlaceholder("Enter a subitem")
+	pressEscape(itemInput)
+	flush()
+	_, view = render()
+	findButton(view, "Add subitem").params.onClick()
+	itemInput.params.onCancel()
+	flush()
+	_, view = render()
+	expect(inputWithPlaceholder("Enter a subitem").nodeRef ~= itemInput.nodeRef,
+		"Reopening a subitem composer replaces native editing state and ignores the old cancel callback")
+	local focusAfterFirstItem = focusCount
+	inputWithPlaceholder("Enter a subitem").params.onTyping("Second platform")
+	_, view = render()
+	-- Native focus loss and its deferred work finish before the mouse release delivers Add.
+	inputWithPlaceholder("Enter a subitem").params.onCancel()
+	inputWithPlaceholder("Enter a subitem").params.meta.onFocusChange(false)
+	flush()
+	_, view = render()
+	expect(inputWithPlaceholder("Enter a subitem").params.value == "Second platform",
+		"Focus loss preserves the composer and its draft until the later Add click")
+	findButton(find(view, function(node)
+		return node.kind == "BoxLayout" and find(node, function(child)
+			return child.kind == "TextInputField" and child.params.placeholderText == "Enter a subitem"
+		end) ~= nil and node.params.meta and node.params.meta.class == "noter-line, noter-fill-width"
+	end), "Add").params.onClick()
+	flush()
+	_, view = render()
+	expect(#notebook().tasks[1].items == 2 and focusCount == focusAfterFirstItem + 1
+		and taskRow(view, 2).params.meta.class:find("noter-subitem", 1, true) and progress("0/2"),
+		"A reopened composer accepts Add after input cancellation, then focuses its next field")
+	expect(taskRow(view, 2).kind == "Component" and taskRow(view, 2).params.layout.kind == "BoxLayout",
+		"Subitem rows preserve native Component identity around their layout")
+	expect(taskRow(view, 2).params.meta.class:find("noter-no-padding", 1, true)
+		and taskRow(view, 2).styleClasses:find("noter-no-padding", 1, true),
+		"Subitems apply the shared zero-padding class to both native row components")
+	local childLayout = taskRow(view, 2).params.layout
+	local spacer = childLayout.params.children[1]
+	local spacerSize = assignedStyleSizes[spacer.params.meta.styleSheet]
+	expect(childLayout.params.orientation == "Horizontal" and spacer.kind == "Component"
+		and spacerSize and spacerSize.x > 0 and spacerSize.y == 0
+		and childLayout.params.children[2].params.layout.params.orientation == "Vertical",
+		"A native spacer reserves horizontal space before the entire subitem row and its actions")
+	expect(taskRow(view, 1).params.layout.params.orientation == "Vertical",
+		"Parent notes retain their existing layout without a subitem spacer")
+	expect(not find(taskRow(view, 2), function(node)
+		return node.params.meta and node.params.meta.class == "noter-pin-slot"
+	end), "Subitems omit the unused map-marker column so labels stay beside their checkboxes")
+	local groupRows = noteGroup(view, 1).params.layout.params.children
+	local composer = groupRows[#groupRows]
+	local composerSpacer = composer.params.children[1]
+	expect(composerSpacer.kind == "Component"
+		and composerSpacer.params.meta.styleSheet == spacer.params.meta.styleSheet
+		and taskRow(view, 3).params.layout.params.children[1].params.meta.styleSheet == spacer.params.meta.styleSheet,
+		"Subitem rows and their composer reuse one native spacer style")
+	expect(groupRows[1] == taskRow(view, 1) and groupRows[2] == taskRow(view, 2) and find(composer, function(node)
+		return node.kind == "TextInputField" and node.params.placeholderText == "Enter a subitem"
+	end), "Each note groups its children together with the composer after the last child")
+	expect(taskButton(view, 2).params.content.params.meta.class:find("font-scale-annotation", 1, true)
+		and taskButton(view, 1).params.content.params.meta.class:find("font-scale-body", 1, true),
+		"Subitems use the game's smaller annotation font while parent notes retain body text")
+	inputWithPlaceholder("Enter a subitem").params.onValueChange("Third platform")
+	_, view = render()
+	expect(#notebook().tasks[1].items == 3 and progress("0/3"),
+		"Successive native Enter submissions continue adding items after the second")
+	pressEscape(inputWithPlaceholder("Enter a subitem"))
+	flush()
+	_, view = render()
+	local addItemRow = assert(find(noteGroup(view, 1), function(node)
+		return node.params.meta and node.params.meta.localKey == "add-item.action.1"
+	end))
+	expect(not getButton(taskRow(view, 1), "Add subitem")
+		and addItemRow.params.meta.class:find("noter-no-padding", 1, true)
+		and addItemRow.params.layout.params.children[1].params.meta.styleSheet == spacer.params.meta.styleSheet
+		and getButton(addItemRow, "Add subitem"),
+		"The checklist plus uses child indentation beneath the list rather than the parent action row")
+	clickTask(view, 4)
+	_, view = render()
+	findButton(taskActions(view, 4), "Delete").params.onClick()
+	_, view = render()
+	findButton(taskActions(view, 4), "Yes").params.onClick()
+	_, view = render()
+	checkbox(2).params.onValueChange(1)
+	_, view = render()
+	expect(checkbox(1).params.value == -1 and progress("1/2") and not notebook().tasks[1].completed
+		and view.params.title == "Noter · 1 remaining",
+		"Partial progress uses the game's indeterminate checkbox and counts only parent notes")
+	checkbox(1).params.onValueChange(0)
+	_, view = render()
+	expect(checkbox(1).params.value == 1 and checkbox(2).params.value == 1 and checkbox(3).params.value == 1
+		and progress("2/2") and view.params.title == "Noter · 0 remaining",
+		"The native partial-to-unchecked event checks all children as the parent's bulk action")
+	checkbox(1).params.onValueChange(0)
+	_, view = render()
+	expect(checkbox(2).params.value == 0 and checkbox(3).params.value == 0 and progress("0/2"),
+		"Clearing the parent clears every subitem")
+	local textButtons, textClasses = {}, {}
+	for id = 1, 3 do
+		textButtons[id] = taskButton(view, id).nodeRef
+		textClasses[id] = taskButton(view, id).params.content.params.meta.class
+	end
+	local writesBeforeTargeting = writeCount
+	local function expectStationaryChecklist(targetId)
+		local rows = noteGroup(view, 1).params.layout.params.children
+		local actions = assert(taskActions(view, targetId))
+		expect(rows[1] == taskRow(view, 1) and rows[2] == taskRow(view, 2) and rows[3] == taskRow(view, 3)
+			and rows[4] == actions and actions.params.layout.params.orientation == "Horizontal",
+			"Switching targets keeps every checklist row before one consistently indented action bar")
+		for id = 1, 3 do
+			local textButton = taskButton(view, id)
+			expect(textButton.nodeRef == textButtons[id]
+				and textButton.params.content.params.meta.class == textClasses[id]
+				and not find(taskRow(view, id), function(node)
+					return node.params.meta and node.params.meta.class == "noter-actions"
+				end), "Target changes preserve native text buttons and wrapping without inserting controls between rows")
+		end
+		expect(taskRow(view, targetId).params.meta.class:find("noter-selected", 1, true)
+			and writeCount == writesBeforeTargeting,
+			"Selection stays on the requested checklist entry without changing saved data")
+	end
+	expectStationaryChecklist(1)
+	for _, id in ipairs({2, 2, 3, 2}) do
+		clickTask(view, id)
+		_, view = render()
+		expectStationaryChecklist(id)
+	end
+	local unselectedItemButton = taskButton(view, 3)
+	unselectedItemButton.params.onClick()
+	_, view = render()
+	expectStationaryChecklist(3)
+	local secondItemClick = taskButton(view, 3)
+	secondItemClick.params.onClick()
+	_, view = render()
+	expectStationaryChecklist(3)
+	secondItemClick.params.onDoubleClick()
+	unselectedItemButton.params.onClick()
+	_, view = render()
+	itemInput = assert(find(taskRow(view, 3), function(node) return node.kind == "TextInputField" end))
+	expect(itemInput.params.value == "Second platform" and not getButton(taskActions(view, 1), "Edit")
+		and writeCount == writesBeforeTargeting,
+		"Double-clicking an untargeted subitem survives intervening redraws and late single-click callbacks")
+	pressEscape(itemInput)
+	_, view = render()
+	clickTask(view, 2)
+	_, view = render()
+	expect(getButton(taskActions(view, 2), "Edit") and not getButton(taskRow(view, 2), "Add subitem")
+		and not getButton(taskActions(view, 2), "Set point") and not getButton(taskActions(view, 1), "Edit"),
+		"Subitems share normal row actions without allowing nested checklists or map points")
+	local selectedItemButton = taskButton(view, 2)
+	selectedItemButton.params.onClick()
+	_, view = render()
+	expectStationaryChecklist(2)
+	selectedItemButton.params.onDoubleClick()
+	selectedItemButton.params.onClick()
+	_, view = render()
+	itemInput = assert(find(taskRow(view, 2), function(node) return node.kind == "TextInputField" end))
+	expect(itemInput.params.value == "First platform 🚉" and writeCount == writesBeforeTargeting,
+		"Double-clicking the selected subitem edits that subitem instead of selecting the parent")
+	local staleCancel = findButton(taskRow(view, 2), "Cancel")
+	clickTask(view, 3)
+	itemInput.params.onValueChange("Late save from the previous subitem target")
+	staleCancel.params.onClick()
+	_, view = render()
+	expectStationaryChecklist(3)
+	expect(notebook().tasks[1].items[1].text == "First platform 🚉",
+		"Late Save and Cancel events cannot change an old subitem or replace the new target before redraw")
+	clickTask(view, 2, "DoubleClicked")
+	_, view = render()
+	itemInput = assert(find(taskRow(view, 2), function(node) return node.kind == "TextInputField" end))
+	itemInput.params.onTyping("Extended first platform")
+	tooltipButton(view, "Expand window").params.onClick()
+	_, view = render()
+	itemInput = assert(find(taskRow(view, 2), function(node) return node.kind == "TextInputField" end))
+	expect(itemInput.params.value == "Extended first platform" and itemInput.params.placeholderText == "Enter a subitem",
+		"Expanding the notebook preserves a subitem edit draft and its native editor")
+	findButton(taskRow(view, 2), "Save").params.onClick()
+	_, view = render()
+	expect(notebook().tasks[1].items[1].text == "Extended first platform"
+		and notebook().tasks[1].text == "Upgrade Central station",
+		"Saving a child edit changes only its own text")
+	tooltipButton(taskActions(view, 2), "Move down").params.onClick()
+	_, view = render()
+	expect(notebook().tasks[1].items[1].id == 3 and notebook().tasks[1].items[2].id == 2
+		and getButton(taskActions(view, 2), "Edit") and not tooltipButton(taskActions(view, 2), "Move down").params.meta.enabled,
+		"Reordering retains the selected child and disables its boundary arrow")
+	findButton(taskActions(view, 2), "Delete").params.onClick()
+	_, view = render()
+	expect(find(taskActions(view, 2), function(node)
+		return node.kind == "TextView" and node.params.text == "Delete this subitem?"
+	end), "Child deletion names the subitem in its confirmation")
+	findButton(taskActions(view, 2), "No").params.onClick()
+	_, view = render()
+	expect(#notebook().tasks[1].items == 2, "Cancelling child deletion preserves the checklist")
+	clickTask(view, 1)
+	_, view = render()
+	findButton(taskActions(view, 1), "Set point").params.onClick()
+	flush()
+	_, view = render()
+	expect(tool ~= nil, "The checklist parent retains its native map picker")
+	findButton(noteGroup(view, 1), "Add subitem").params.onClick()
+	flush()
+	_, view = render()
+	expect(tool == nil, "Opening the checklist composer cancels a pending map picker")
+	pressEscape(inputWithPlaceholder("Enter a subitem"))
+	flush()
+	_, view = render()
+	checkbox(2).params.onValueChange(1)
+	_, view = render()
+	view.params.onClose()
+	flush()
+	root = render()
+	toolbarButton(root).params.onValueChange(1)
+	flush()
+	_, view = render()
+	expect(progress("1/2") and checkbox(1).params.value == -1 and not hasRow(2) and not hasRow(3),
+		"Reopening restores partial progress while keeping the checklist collapsed")
+	clickTask(view, 1)
+	_, view = render()
+	expect(checkbox(2).params.value == 1 and checkbox(3).params.value == 0
+		and notebook().tasks[1].items[1].id == 3,
+		"Expanding restores the saved child ordering, text and completion")
+	local filter = assert(find(view, function(node) return node.kind == "CheckBox" and node.params.label == "Hide completed" end))
+	filter.params.onValueChange(1)
+	_, view = render()
+	checkbox(3).params.onValueChange(1)
+	_, view = render()
+	expect(not hasRow(1) and not hasRow(2) and not hasRow(3) and view.params.title == "Noter · 0 remaining",
+		"The last tick hides the whole group and clears child selection")
+	filter = assert(find(view, function(node) return node.kind == "CheckBox" and node.params.label == "Hide completed" end))
+	filter.params.onValueChange(0)
+	_, view = render()
+	expect(hasRow(1) and not hasRow(2) and progress("2/2"),
+		"Showing completed notes restores the parent without resurrecting its temporary selection")
+	clickTask(view, 1)
+	_, view = render()
+	findButton(taskActions(view, 1), "Delete").params.onClick()
+	_, view = render()
+	expect(find(taskActions(view, 1), function(node)
+		return node.kind == "TextView" and node.params.text == "Delete this task and its checklist?"
+	end), "Parent deletion explicitly includes its checklist")
+	findButton(taskActions(view, 1), "No").params.onClick()
+	_, view = render()
+	checkbox(3).params.onValueChange(0)
+	_, view = render()
+	clickTask(view, 3)
+	_, view = render()
+	findButton(taskActions(view, 3), "Delete").params.onClick()
+	_, view = render()
+	findButton(taskActions(view, 3), "Yes").params.onClick()
+	_, view = render()
+	expect(#notebook().tasks[1].items == 1 and notebook().tasks[1].completed
+		and getButton(taskActions(view, 1), "Edit") and not hasRow(3),
+		"Deleting the selected unchecked child completes the parent and returns selection to it")
+	clickTask(view, 2)
+	_, view = render()
+	findButton(taskActions(view, 2), "Delete").params.onClick()
+	_, view = render()
+	findButton(taskActions(view, 2), "Yes").params.onClick()
+	_, view = render()
+	expect(#notebook().tasks[1].items == 0 and notebook().tasks[1].completed and checkbox(1).params.value == 1,
+		"Removing the final child leaves a completed ordinary note")
+	checkbox(1).params.onValueChange(0)
+	_, view = render()
+	expect(not notebook().tasks[1].completed, "The ordinary note can be unchecked manually again")
+	view.params.onClose()
+	flush()
+	root = render()
+end
+do
+	local saved = model.addTask(model.newNotebook(), "Checklist note")
+	saved = model.addItem(saved, 1, "First subitem")
+	saved = model.addItem(saved, 1, "Second subitem")
+	saved = model.setItemCompleted(saved, 1, 2, true)
+	saved = model.setPoint(saved, 1, terrainPoint)
+	saved = model.addTask(saved, "Ordinary note")
+	local function openNotebook(parameters)
+		modParams = {apasz_noter = parameters}
+		toolbarButton(root).params.onValueChange(1)
+		flush()
+		_, view = render()
+		clickTask(view, 1)
+		_, view = render()
+	end
+	local function closeNotebook()
+		view.params.onClose()
+		flush()
+		root = render()
+	end
+	for _, case in ipairs({
+		{name = "Missing subitems parameter", parameters = {}, enabled = true},
+		{name = "Subitems on", parameters = {apasz_noter_subitems = 2}, enabled = true},
+		{name = "Subitems off", parameters = {apasz_noter_subitems = 1}, enabled = false},
+	}) do
+		saveId = case.name
+		saves[saveId] = {apasz_noter = copy(saved)}
+		local writesBeforeOpen = writeCount
+		openNotebook(case.parameters)
+		local hasSubitems = find(view, function(node)
+			return node.kind == "TextView" and node.params.text == "First subitem"
+		end) ~= nil
+		local hasProgress = find(taskRow(view, 1), function(node)
+			return node.kind == "TextView" and node.params.text == "1/2"
+		end) ~= nil
+		expect(hasSubitems == case.enabled and hasProgress == case.enabled
+			and (getButton(view, "Add subitem") ~= nil) == case.enabled,
+			case.name .. ": subitems, progress and creation controls follow the setting")
+		local restored = notebook()
+		expect(writeCount == writesBeforeOpen and restored.nextId == saved.nextId
+			and restored.tasks[1].items[1].completed and not restored.tasks[1].items[2].completed,
+			case.name .. ": opening and selecting preserve saved subitems and partial completion")
+		if not case.enabled then
+			findButton(taskActions(view, 1), "Edit").params.onClick()
+			_, view = render()
+			local parentInput = assert(find(taskRow(view, 1), function(node) return node.kind == "TextInputField" end))
+			parentInput.params.onValueChange("Renamed checklist note")
+			_, view = render()
+			expect(notebook().tasks[1].text == "Renamed checklist note"
+				and notebook().tasks[1].items[1].text == "First subitem"
+				and notebook().tasks[1].items[2].text == "Second subitem"
+				and notebook().tasks[1].items[1].id == 2 and notebook().tasks[1].items[2].id == 3
+				and notebook().tasks[1].point.x == terrainPoint.x,
+				"Editing a parent while subitems are disabled preserves its checklist and map point")
+			local parentCheckbox = assert(find(taskRow(view, 1), function(node) return node.kind == "CheckBox" end))
+			expect(parentCheckbox.params.value == -1 and parentCheckbox.params.meta.tooltip == "Check all subitems",
+				"A hidden partial checklist retains its parent checkbox state and bulk-action tooltip")
+			parentCheckbox.params.onValueChange(0)
+			_, view = render()
+			expect(notebook().tasks[1].completed and notebook().tasks[1].items[1].completed
+				and notebook().tasks[1].items[2].completed,
+				"The partial parent checkbox still completes every hidden subitem")
+			parentCheckbox = assert(find(taskRow(view, 1), function(node) return node.kind == "CheckBox" end))
+			parentCheckbox.params.onValueChange(0)
+			_, view = render()
+			expect(not notebook().tasks[1].completed and not notebook().tasks[1].items[1].completed
+				and not notebook().tasks[1].items[2].completed,
+				"The completed parent checkbox still clears every hidden subitem")
+			findButton(taskActions(view, 1), "Delete").params.onClick()
+			_, view = render()
+			expect(find(taskActions(view, 1), function(node)
+				return node.kind == "TextView" and node.params.text == "Delete this task and its checklist?"
+			end), "Deleting a parent still warns about its hidden checklist")
+			findButton(taskActions(view, 1), "No").params.onClick()
+			_, view = render()
+			local ordinaryCheckbox = assert(find(taskRow(view, 4), function(node) return node.kind == "CheckBox" end))
+			ordinaryCheckbox.params.onValueChange(1)
+			_, view = render()
+			expect(notebook().tasks[2].completed and #notebook().tasks[1].items == 2
+				and not getButton(view, "Add subitem"),
+				"Ordinary note completion works with subitems disabled and keeps the hidden checklist")
+			closeNotebook()
+			local writesBeforeEnable = writeCount
+			openNotebook({apasz_noter_subitems = 2})
+			expect(writeCount == writesBeforeEnable and getButton(view, "Add subitem")
+				and taskButton(view, 2).params.content.params.text == "First subitem"
+				and taskButton(view, 3).params.content.params.text == "Second subitem"
+				and notebook().tasks[1].text == "Renamed checklist note"
+				and not notebook().tasks[1].items[1].completed and not notebook().tasks[1].items[2].completed,
+				"Re-enabling restores access to the same saved subitems with the updated completion state")
+		end
+		closeNotebook()
+	end
+	modParams = {}
+end
 for locale, texts in pairs(runtime.translations) do
 	language = locale
 	saveId = "locale_" .. locale
@@ -1406,12 +1926,24 @@ for locale, texts in pairs(runtime.translations) do
 	expect(view.params.title == langUtil.format(texts.APASZ_NOTER_TITLE_REMAINING, {count = "1"})
 		and notebook().tasks[1].text == literalNote,
 		locale .. ": the title formats one remaining while user notes stay literal")
+	for _, action in ipairs({
+		{texts.APASZ_NOTER_ADD, "::/gui/line_vehicle_mgmt/icons/add.tga"},
+		{texts.APASZ_NOTER_ADD_ITEM, "::/gui/line_vehicle_mgmt/icons/add.tga"},
+		{texts.APASZ_NOTER_EDIT, "::/gui/builtin/window/icons/symbol_pencil.tga"},
+		{texts.APASZ_NOTER_MOVE_UP, "::/gui/builtin/spinbox/arrow_up.tga"},
+		{texts.APASZ_NOTER_MOVE_DOWN, "::/gui/builtin/spinbox/arrow_down.tga"},
+		{texts.APASZ_NOTER_SET_POINT, "::/gui/builtin/window/icons/symbol_locate.tga"},
+		{texts.APASZ_NOTER_DELETE, "::/gui/menu/icons/trash.tga"},
+	}) do
+		expectIconButton(view, action[1], action[2])
+	end
 	findButton(view, texts.APASZ_NOTER_SET_POINT).params.onClick()
 	flush()
 	_, view, selector = render()
 	expect(find(view, function(node)
 		return node.kind == "TextView" and node.params.text == texts.APASZ_NOTER_PICK_POINT_PROMPT
 	end), locale .. ": the map-picker prompt is translated")
+	expectIconButton(view, texts.APASZ_NOTER_CANCEL, "::/gui/builtin/window/icons/cross_thin.tga")
 	findButton(view, texts.APASZ_NOTER_CANCEL).params.onClick()
 	flush()
 	_, view = render()
@@ -1428,7 +1960,69 @@ for locale, texts in pairs(runtime.translations) do
 	_, view = render()
 	expect(view.params.title == langUtil.format(texts.APASZ_NOTER_TITLE_REMAINING, {count = "2"}),
 		locale .. ": the title formats multiple remaining")
+	findButton(noteGroup(view, 2), texts.APASZ_NOTER_ADD_ITEM).params.onClick()
+	_, view = render()
+	local itemInput = assert(find(view, function(node)
+		return node.kind == "TextInputField" and node.params.placeholderText == texts.APASZ_NOTER_ENTER_ITEM
+	end))
+	itemInput.params.onValueChange("Literal checklist item · APASZ_NOTER_ADD_ITEM")
+	_, view = render()
+	findButton(view, texts.APASZ_NOTER_CANCEL).params.onClick()
+	_, view = render()
+	expect(notebook().tasks[2].items[1].text == "Literal checklist item · APASZ_NOTER_ADD_ITEM",
+		locale .. ": checklist user text stays literal while its composer is translated")
+	expect(taskButton(view, 2).params.meta.tooltip == texts.APASZ_NOTER_TASK_ACTIONS_TOOLTIP
+		and taskButton(view, 3).params.meta.tooltip == texts.APASZ_NOTER_TASK_ACTIONS_TOOLTIP,
+		locale .. ": notes and subitems initially show translated mouse guidance")
+	_, view = renderInputMode(true)
+	expect(taskButton(view, 2).params.meta.tooltip == texts.APASZ_NOTER_TASK_ACTIONS_CONTROLLER_TOOLTIP
+		and taskButton(view, 3).params.meta.tooltip == texts.APASZ_NOTER_TASK_ACTIONS_CONTROLLER_TOOLTIP,
+		locale .. ": notes and subitems switch to translated controller guidance while open")
+	_, view = renderInputMode(false)
+	expect(taskButton(view, 2).params.meta.tooltip == texts.APASZ_NOTER_TASK_ACTIONS_TOOLTIP
+		and taskButton(view, 3).params.meta.tooltip == texts.APASZ_NOTER_TASK_ACTIONS_TOOLTIP,
+		locale .. ": notes and subitems restore translated mouse guidance while open")
+	clickTask(view, 3)
+	_, view = render()
+	findButton(taskActions(view, 3), texts.APASZ_NOTER_DELETE).params.onClick()
+	_, view = render()
+	expect(find(taskActions(view, 3), function(node)
+		return node.kind == "TextView" and node.params.text == texts.APASZ_NOTER_DELETE_ITEM_CONFIRM
+	end), locale .. ": subitem deletion confirmation is translated")
+	findButton(taskActions(view, 3), texts.APASZ_NOTER_NO).params.onClick()
+	_, view = render()
+	clickTask(view, 2)
+	_, view = render()
+	findButton(taskActions(view, 2), texts.APASZ_NOTER_DELETE).params.onClick()
+	_, view = render()
+	expect(find(taskActions(view, 2), function(node)
+		return node.kind == "TextView" and node.params.text == texts.APASZ_NOTER_DELETE_CHECKLIST_CONFIRM
+	end), locale .. ": deleting a parent names its checklist in the translated confirmation")
+	findButton(taskActions(view, 2), texts.APASZ_NOTER_NO).params.onClick()
+	_, view = render()
+	local parentCheckbox = assert(find(taskRow(view, 2), function(node) return node.kind == "CheckBox" end))
+	expect(parentCheckbox.params.meta.tooltip == texts.APASZ_NOTER_CHECK_ALL,
+		locale .. ": the incomplete checklist's bulk action is translated")
+	parentCheckbox.params.onValueChange(1)
+	_, view = render()
+	parentCheckbox = assert(find(taskRow(view, 2), function(node) return node.kind == "CheckBox" end))
+	expect(parentCheckbox.params.meta.tooltip == texts.APASZ_NOTER_UNCHECK_ALL
+		and find(taskRow(view, 2), function(node)
+			return node.kind == "TextView" and node.params.text == langUtil.format(texts.APASZ_NOTER_CHECKLIST_PROGRESS,
+				{completed = "1", total = "1"})
+		end), locale .. ": completed checklist progress and the clear-all action use the catalogue")
 	view.params.onClose()
+	flush()
+	root = render()
+end
+for _, invalidValue in ipairs({0, 3, -1, 0.5, "1", true}) do
+	modParams = {apasz_noter = {apasz_noter_subitems = invalidValue}}
+	toolbarButton(root).params.onValueChange(1)
+	flush()
+	local ok, invalidParameter = pcall(render)
+	expect(not ok and tostring(invalidParameter):find("[Noter] ERROR: Invalid apasz_noter_subitems parameter:", 1, true),
+		"Invalid subitems parameters fail explicitly instead of hiding or showing saved subitems")
+	toolbarButton(root).params.onValueChange(0)
 	flush()
 	root = render()
 end
@@ -1437,7 +2031,7 @@ for _, invalidValue in ipairs({0, 3, -1, 0.5, "1", true}) do
 	toolbarButton(root).params.onValueChange(1)
 	flush()
 	local ok, invalidParameter = pcall(render)
-	expect(not ok and tostring(invalidParameter):find("[Noter] ERROR: Invalid opaque-window parameter:", 1, true),
+	expect(not ok and tostring(invalidParameter):find("[Noter] ERROR: Invalid apasz_noter_opaque_window parameter:", 1, true),
 		"Invalid opacity parameters fail explicitly instead of choosing an appearance")
 	toolbarButton(root).params.onValueChange(0)
 	flush()

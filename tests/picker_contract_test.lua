@@ -2,8 +2,9 @@ local uiCode, reactPath = ...
 
 local function check(loadOrder)
 	local framework = {recipes = {}, recipeMetas = {}, originalRecipeFn = {}, recipeReplace = {}, tools = {},
-		builtin = {WithComponentParams = 0, ActionDescriptor = -1, Selector = -2, Window = -3, ActionFn = -4}}
+		builtin = {WithComponentParams = 0, ActionDescriptor = -1, Selector = -2, Window = -3, ActionFn = -4, Component = -5}}
 	local nextRecipeId = 0
+	local recipeIds = {}
 	local nativeParams = {}
 	for name in pairs(framework.builtin) do nativeParams[name] = {new = function() return {} end} end
 	local frameworkEnvironment = setmetatable({
@@ -12,7 +13,11 @@ local function check(loadOrder)
 		require = function(path) assert(path == "/scripts/string_util.tl"); return {} end,
 		ug_require = function(path) assert(path == "/scripts/util.tl"); return {} end,
 		api = {gui = {react = {
-			detail = {makeRecipeId = function() nextRecipeId = nextRecipeId + 1; return nextRecipeId end},
+			detail = {makeRecipeId = function(name)
+				nextRecipeId = nextRecipeId + 1
+				recipeIds[name] = nextRecipeId
+				return nextRecipeId
+			end},
 			params = {builtin = nativeParams}, fireEvent = function() end,
 		}}},
 	}, {__index = _G})
@@ -43,6 +48,8 @@ local function check(loadOrder)
 		["::/gui/main/react.lua"] = react,
 		["::/gui/main/builtin.lua"] = builtin,
 		["::/gui/main/game_react_globals.tl"] = {},
+		["::/gui/main/engine_react_util.tl"] = {},
+		["::/scripts/app_util.tl"] = {},
 		["::/scripts/lang_util.tl"] = {},
 		["::/gui/main/main_mod_button_area.tl"] = {MainModButtonAreaExtension = {}},
 		["apasz_noter::/noter/model.tl"] = {},
@@ -50,11 +57,16 @@ local function check(loadOrder)
 	}
 	local environment = setmetatable({
 		getOwningModId = function() return "apasz_noter" end,
-		ug_require = function(path) return assert(dependencies[path], "Unexpected dependency: " .. path) end,
+		ug_require = function(path)
+			assert(dependencies[path] ~= nil, "Unexpected dependency: " .. path)
+			return dependencies[path]
+		end,
 		api = {gui = {mouse = {Event = {Type = {Clicked = "Clicked"}}, hasTerrainPosition = function() return true end,
 			getTerrainPosition = function() return {x = 120, y = -30, z = 8} end}}},
 	}, {__index = _G})
 	assert(load(uiCode, "@noter/ui.script.tl", "t", environment))()
+	assert(framework.recipeMetas[assert(recipeIds.NoterTaskRow)].innerRecipeId == react.GetRecipeId(builtin.Component),
+		"Notebook rows must preserve native Component identity so their margins, padding and borders apply")
 	if loadOrder == "NoterFirst" then installOverlay() end
 	local picker = assert(framework.tools.NoterPointPicker)
 	for _, outcome in ipairs({"Pick", "Back", "Unmount"}) do

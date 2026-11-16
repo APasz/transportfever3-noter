@@ -173,6 +173,7 @@ for _, character in ipairs({"x", "🚂", "界"}) do
 end
 expect(third.tasks[1].text == "Extend the railway", "Rejected edits preserve the previous text")
 local legacy = model.newNotebook()
+legacy.version = 1
 local legacyText = string.rep("🚂", model.MAX_TEXT_LENGTH + 100)
 legacy.nextId = 2
 legacy.tasks = {{id = 1, text = legacyText, completed = false}}
@@ -194,11 +195,11 @@ for _, pointValue in ipairs({{x = 0, y = 0}, {y = 0, z = 0}, {x = 0, z = 0},
 	rejects(function() model.setPoint(third, 1, pointValue) end, "Reject invalid coordinate")
 end
 local invalid = model.newNotebook()
-invalid.version = 2
+invalid.version = model.newNotebook().version + 1
 rejects(function() model.readNotebook(invalid) end, "Reject unknown save version")
 invalid = model.newNotebook()
 invalid.nextId = 3
-invalid.tasks = {{id = 1, text = "A", completed = false}, {id = 1, text = "B", completed = false}}
+invalid.tasks = {{id = 1, text = "A", completed = false, items = {}}, {id = 1, text = "B", completed = false, items = {}}}
 rejects(function() model.readNotebook(invalid) end, "Reject duplicate IDs")
 invalid.tasks[2].id = 2
 invalid.tasks[1].point = false
@@ -211,4 +212,135 @@ exhausted.nextId = math.maxinteger
 rejects(function() model.addTask(exhausted, "No ID space left") end, "Reject task ID overflow")
 expect(#exhausted.tasks == 0 and exhausted.nextId == math.maxinteger,
 	"ID exhaustion leaves the original notebook untouched")
+
+local oldSave = {
+	version = 1, nextId = 4, hideCompleted = true, pinned = true,
+	windowLayout = {x = 0.2, y = 0.3, expanded = true},
+	tasks = {
+		{id = 1, text = "Existing active note", completed = false, point = {x = 10, y = 20, z = 3}},
+		{id = 3, text = "Existing completed note", completed = true},
+	},
+}
+local migrated = model.readNotebook(oldSave)
+expect(migrated.version == model.newNotebook().version and #migrated.tasks[1].items == 0
+	and migrated.tasks[1].point.x == 10 and migrated.tasks[2].completed and migrated.nextId == 4
+	and migrated.hideCompleted and migrated.pinned and migrated.windowLayout.expanded,
+	"Version-one notes migrate without losing completion, IDs, map points or preferences")
+expect(oldSave.version == 1 and oldSave.tasks[1].items == nil and migrated.tasks[1] ~= oldSave.tasks[1],
+	"Migration does not modify game-owned save data")
+expect(model.readNotebook(migrated) == migrated, "Current save data does not need another migration")
+local checklist = model.addItem(positioned, 1, "  Extend the first platform 🚉  ")
+local parent = checklist.tasks[3]
+local firstItemId = parent.items[1].id
+expect(#parent.items == 1 and parent.items[1].text == "Extend the first platform 🚉"
+	and firstItemId == positioned.nextId and checklist.nextId == firstItemId + 1,
+	"Checklist items share the notebook's stable ID sequence and normalize Unicode text")
+expect(#positioned.tasks[3].items == 0 and checklist.tasks[1] == positioned.tasks[1]
+	and parent.point == positioned.tasks[3].point and checklist.windowLayout == positioned.windowLayout,
+	"Adding an item preserves earlier states, unrelated tasks, map points and preferences")
+local twoItems = model.addItem(checklist, 1, "Extend the second platform")
+local secondItemId = twoItems.tasks[3].items[2].id
+local partial = model.setItemCompleted(twoItems, 1, firstItemId, true)
+expect(not partial.tasks[3].completed and model.completedItemCount(partial.tasks[3]) == 1
+	and not twoItems.tasks[3].items[1].completed and partial.tasks[3].items[2] == twoItems.tasks[3].items[2],
+	"Checking one item leaves the parent incomplete and only replaces the changed item")
+expect(model.setItemCompleted(partial, 1, firstItemId, true) == partial
+	and model.editItem(partial, 1, firstItemId, "  Extend the first platform 🚉  ") == partial,
+	"Unchanged item edits and completion events do not dirty the notebook")
+local allItems = model.setItemCompleted(partial, 1, secondItemId, true)
+expect(allItems.tasks[3].completed and model.remainingTaskCount(allItems) == model.remainingTaskCount(partial) - 1
+	and #model.visibleTasks(allItems) == #model.visibleTasks(partial) - 1,
+	"The last tick completes the parent and hides its whole group when Hide completed is enabled")
+expect(model.setCompleted(allItems, 1, true) == allItems, "Checking an already complete checklist is a no-op")
+local reopened = model.setItemCompleted(allItems, 1, firstItemId, false)
+expect(not reopened.tasks[3].completed and #model.visibleTasks(reopened) == #model.visibleTasks(partial),
+	"Unchecking any item reopens its parent")
+local clearedItems = model.setCompleted(allItems, 1, false)
+expect(model.completedItemCount(clearedItems.tasks[3]) == 0 and not clearedItems.tasks[3].completed
+	and model.completedItemCount(allItems.tasks[3]) == 2,
+	"Unchecking the parent clears all children without changing previous states")
+local bulkChecked = model.setCompleted(partial, 1, true)
+expect(bulkChecked.tasks[3].completed and model.completedItemCount(bulkChecked.tasks[3]) == 2
+	and bulkChecked.tasks[3].items[1] == partial.tasks[3].items[1],
+	"Checking a partial parent completes its checklist and reuses already checked items")
+local withNewItem = model.addItem(allItems, 1, "Buy a train")
+expect(not withNewItem.tasks[3].completed and model.completedItemCount(withNewItem.tasks[3]) == 2,
+	"Adding an unchecked item reopens a completed parent")
+local editedItem = model.editItem(partial, 1, firstItemId, "Changed platform")
+expect(editedItem.tasks[3].items[1].text == "Changed platform" and editedItem.tasks[3].items[1].completed
+	and editedItem.tasks[3].point ~= nil and partial.tasks[3].items[1].text ~= "Changed platform",
+	"Editing an item preserves completion, map points and previous text")
+expect(model.editTask(partial, 1, "Changed parent").tasks[3].items == partial.tasks[3].items
+	and model.setPoint(partial, 1, nil).tasks[3].items == partial.tasks[3].items,
+	"Parent edits and map changes retain the checklist")
+do
+	local countItems = model.completedItemCount
+	local completionScans = 0
+	model.completedItemCount = function(task)
+		completionScans = completionScans + 1
+		return countItems(task)
+	end
+	local renamed = model.editTask(partial, 1, "Renamed parent")
+	local relocated = model.setPoint(renamed, 1, {x = 1, y = 2, z = 3})
+	expect(completionScans == 0 and not relocated.tasks[3].completed
+		and relocated.tasks[3].items == partial.tasks[3].items,
+		"Parent text and location updates do not rescan an unchanged checklist")
+	local finished = model.setItemCompleted(relocated, 1, secondItemId, true)
+	expect(completionScans == 1 and finished.tasks[3].completed,
+		"Changing checklist completion still updates the parent")
+	model.completedItemCount = countItems
+end
+local movedItem = model.moveItem(partial, 1, secondItemId, "Up")
+expect(movedItem.tasks[3].items[1].id == secondItemId and not movedItem.tasks[3].items[1].completed
+	and movedItem.tasks[3].items[2].id == firstItemId and not movedItem.tasks[3].completed,
+	"Item ordering stays within the checklist and does not split checked and unchecked items")
+expect(model.moveItem(movedItem, 1, secondItemId, "Up") == movedItem,
+	"Moving a checklist item past its boundary is a no-op")
+local removedIncomplete = model.removeItem(partial, 1, secondItemId)
+expect(removedIncomplete.tasks[3].completed and #removedIncomplete.tasks[3].items == 1,
+	"Removing the last unchecked item completes the remaining checklist")
+local withoutItems = model.removeItem(removedIncomplete, 1, firstItemId)
+expect(#withoutItems.tasks[3].items == 0 and withoutItems.tasks[3].completed,
+	"Removing the final item retains the parent's current completion")
+expect(not model.setCompleted(withoutItems, 1, false).tasks[3].completed,
+	"A note without checklist items returns to manual completion")
+local replacement = model.addItem(withoutItems, 1, "Replacement")
+expect(replacement.tasks[3].items[1].id > secondItemId and not replacement.tasks[3].completed,
+	"Deleted checklist IDs are never reused")
+expect(#model.removeTask(partial, 1).tasks == #partial.tasks - 1 and #partial.tasks[3].items == 2,
+	"Deleting a parent removes its checklist without mutating previous states")
+local checklistRestored = model.readNotebook(assert(load("return " .. serialize(partial)))())
+expect(checklistRestored.tasks[3].items[1].completed and not checklistRestored.tasks[3].items[2].completed
+	and checklistRestored.tasks[3].items[2].id == secondItemId and not checklistRestored.tasks[3].completed,
+	"Checklist text, IDs, ordering and partial completion survive serialization")
+for _, action in ipairs({
+	function() model.addItem(partial, 99, "Missing parent") end,
+	function() model.editItem(partial, 1, 99, "Missing item") end,
+	function() model.setItemCompleted(partial, 1, 99, true) end,
+	function() model.removeItem(partial, 1, 99) end,
+	function() model.moveItem(partial, 1, 99, "Up") end,
+	function() model.moveItem(partial, 1, firstItemId, "Sideways") end,
+	function() model.addItem(partial, 1, "line\nbreak") end,
+	function() model.editItem(partial, 1, firstItemId, string.rep("🚂", model.MAX_TEXT_LENGTH + 1)) end,
+	function() model.addItem(exhausted, 1, "No ID space") end,
+}) do rejects(action, "Invalid checklist mutations fail explicitly") end
+local function invalidChecklist(change)
+	local value = assert(load("return " .. serialize(partial)))()
+	change(value.tasks[3], value)
+	rejects(function() model.readNotebook(value) end, "Reject malformed checklist save data")
+end
+for _, value in ipairs({false, 3, "items"}) do
+	invalidChecklist(function(task) task.items = value end)
+end
+invalidChecklist(function(task) task.items = nil end)
+invalidChecklist(function(task) task.items[1] = nil end)
+invalidChecklist(function(task) task.items.bad = task.items[1] end)
+invalidChecklist(function(task) task.items[2].id = task.items[1].id end)
+invalidChecklist(function(task) task.items[2].id = task.id end)
+invalidChecklist(function(task, value) task.items[2].id = value.nextId end)
+invalidChecklist(function(task) task.items[1].text = "" end)
+invalidChecklist(function(task) task.items[1].completed = "true" end)
+invalidChecklist(function(task) task.items[1].items = {} end)
+invalidChecklist(function(task) task.items[1].point = {x = 0, y = 0, z = 0} end)
+invalidChecklist(function(task) task.completed = true end)
 print(string.format("Notebook behavior: %d checks passed", checks))

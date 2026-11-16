@@ -19,6 +19,21 @@
             "defaultIndex": 1
         },
         {
+            "key": "apasz_noter_subitems",
+            "name": "APASZ_NOTER_SUBITEMS",
+            "tooltip": "APASZ_NOTER_SUBITEMS_TOOLTIP",
+            "uiType": "CheckBox",
+            "values": [
+                "APASZ_NOTER_OFF",
+                "APASZ_NOTER_ON"
+            ],
+            "numbers": [
+                1.0,
+                2.0
+            ],
+            "defaultIndex": 1
+        },
+        {
             "key": "apasz_noter_opaque_window",
             "name": "APASZ_NOTER_OPAQUE_WINDOW",
             "tooltip": "APASZ_NOTER_OPAQUE_WINDOW_TOOLTIP",
@@ -40,7 +55,7 @@
     "preRunScript": {
         "fileName": ""
     },
-    "revision": 4,
+    "revision": 5,
     "runScript": {
         "fileName": ""
     }
